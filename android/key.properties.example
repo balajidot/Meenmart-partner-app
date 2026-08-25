@@ -1,0 +1,6 @@
+# Copy this file to android/key.properties and replace every placeholder.
+# Do not commit android/key.properties.
+storePassword=replace-with-keystore-password
+keyPassword=replace-with-key-password
+keyAlias=replace-with-key-alias
+storeFile=replace-with-absolute-or-project-relative-keystore-path

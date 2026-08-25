@@ -1,0 +1,121 @@
+{
+  "project_info": {
+    "project_number": "467956159992",
+    "project_id": "meenmart-official-v1",
+    "storage_bucket": "meenmart-official-v1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:467956159992:android:a8b3e708bb28401895320d",
+        "android_client_info": {
+          "package_name": "com.meenmart.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "467956159992-1m5dnlqkelbhf8oot97o5l0utg9a9u47.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.meenmart.app",
+            "certificate_hash": "551089889737d795b052fa7863d854c8f2d2c73b"
+          }
+        },
+        {
+          "client_id": "467956159992-e3f5jko8gjb3g32ie18e5n4k6tccbus6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.meenmart.app",
+            "certificate_hash": "c392b5f2a03a70513dcd7816bf957787395bb2cd"
+          }
+        },
+        {
+          "client_id": "467956159992-lpnand8plnm1bmvpja5gm66lam4kb2jt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.meenmart.app",
+            "certificate_hash": "e5e1e53433f7fa1985757b5e5a51e0fb7cbb4796"
+          }
+        },
+        {
+          "client_id": "467956159992-gqmannuim5aedp68m4qjg060ke80oi8p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4COXNCEtOXVFCSL_vh85WTeEs6_cgv90"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "467956159992-gqk9nk97n6cetnr77ndjo1tfv0shoenh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:467956159992:android:9fd32c3dfa498c2795320d",
+        "android_client_info": {
+          "package_name": "com.meenmart.partner"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "467956159992-gqmannuim5aedp68m4qjg060ke80oi8p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4COXNCEtOXVFCSL_vh85WTeEs6_cgv90"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "467956159992-gqk9nk97n6cetnr77ndjo1tfv0shoenh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:467956159992:android:b9898aafbbe9d09695320d",
+        "android_client_info": {
+          "package_name": "in.meenmart.admin"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "467956159992-gqmannuim5aedp68m4qjg060ke80oi8p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4COXNCEtOXVFCSL_vh85WTeEs6_cgv90"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "467956159992-gqk9nk97n6cetnr77ndjo1tfv0shoenh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
