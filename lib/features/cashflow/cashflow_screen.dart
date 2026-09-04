@@ -117,7 +117,7 @@ class _CashflowScreenState extends ConsumerState<CashflowScreen> {
         id, order_ref, customer_name, phone, delivery_address, total_price, 
         delivery_charge, discount_amount, payment_method, status, created_at,
         order_items(
-          id, quantity_kg, price_per_kg, with_cleaning, cleaning_fee, cutting_type, size_preference,
+          id, quantity_kg, price_per_kg, with_cleaning, cleaning_fee, cutting_type,
           fish_items(name, tamil_name, buying_price, price_per_kg, cleaning_charge, image_url)
         )
       ''');

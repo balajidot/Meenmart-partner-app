@@ -130,7 +130,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
           'available': true,
           'has_cleaning': true,
           'cleaning_charge': 30.0,
-          'has_size_preference': true,
           'image_url': 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?w=400',
           'allowed_cutting_types': ['Whole', 'Slices', 'Curry Cut'],
         },
@@ -145,7 +144,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
           'available': true,
           'has_cleaning': true,
           'cleaning_charge': 25.0,
-          'has_size_preference': true,
           'image_url': 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=400',
           'allowed_cutting_types': ['Whole', 'Cleaned'],
         },
@@ -182,7 +180,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
     'has_cleaning',
     'preparation_minutes',
     'buying_price',
-    'has_size_preference',
     'is_deleted',
     'min_order_kg',
     'allowed_cutting_types',
@@ -1659,7 +1656,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
     String photoUrl = '';
     List<String> selectedCuttings = ['curry_cut', 'fry_cut', 'whole_cleaned'];
     bool hasCleaning = true;
-    bool hasSizePref = true;
     bool isUploading = false;
     bool isSubmitting = false;
 
@@ -2097,31 +2093,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
                               ),
                               child: Column(
                                 children: [
-                                  // Size Preference Toggle
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.straighten_rounded, size: 18, color: Color(0xFF2563EB)),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text('Customer Size Preference', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A))),
-                                            Text('Small / Medium / Large options for buyer', style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF64748B))),
-                                          ],
-                                        ),
-                                      ),
-                                      Transform.scale(
-                                        scale: 0.8,
-                                        child: Switch.adaptive(
-                                          value: hasSizePref,
-                                          activeTrackColor: _brandColor,
-                                          onChanged: (val) => setAddState(() => hasSizePref = val),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const Divider(height: 16, color: Color(0xFFE2E8F0)),
                                   // Cleaning Option Toggle
                                   Row(
                                     children: [
@@ -2269,7 +2240,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
                                   'available': stock > 0,
                                   'has_cleaning': hasCleaning,
                                   'cleaning_charge': cleanFee,
-                                  'has_size_preference': hasSizePref,
                                   'image_url': photoUrl.isNotEmpty ? photoUrl : null,
                                   'badge': null,
                                   'allowed_cutting_types': selectedCuttings,
@@ -2364,7 +2334,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
     String editPhotoUrl = (item['image_url'] ?? '').toString().trim();
     bool isUploadingPhoto = false;
     bool hasCleaning = (item['has_cleaning'] ?? true) == true;
-    bool hasSizePref = (item['has_size_preference'] ?? true) == true;
     bool isAvailable = (item['available'] ?? true) == true;
 
     List<String> currentCuttings = [];
@@ -2569,7 +2538,7 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
                                                     children: [
                                                       const Icon(Icons.photo_library_rounded, size: 14, color: Color(0xFF2563EB)),
                                                       const SizedBox(width: 4),
-                                                      Text('Gallery', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF1E40AF))),
+                                                      Text('Gallery', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF1E40AF)),),
                                                     ],
                                                   ),
                                                 ),
@@ -2778,7 +2747,7 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
                             ),
                             const SizedBox(height: 14),
 
-                            // Options Card (Size & Cleaning)
+                            // Options Card (Cleaning)
                             Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
@@ -2788,24 +2757,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
                               ),
                               child: Column(
                                 children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.straighten_rounded, size: 18, color: Color(0xFF2563EB)),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text('Customer Size Preference', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
-                                      ),
-                                      Transform.scale(
-                                        scale: 0.8,
-                                        child: Switch.adaptive(
-                                          value: hasSizePref,
-                                          activeTrackColor: _brandColor,
-                                          onChanged: (val) => setModalState(() => hasSizePref = val),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const Divider(height: 16, color: Color(0xFFE2E8F0)),
                                   Row(
                                     children: [
                                       const Icon(Icons.cleaning_services_rounded, size: 18, color: Color(0xFF059669)),
@@ -2909,7 +2860,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
                               'available': isAvailable && (newStock > 0),
                               'has_cleaning': hasCleaning,
                               'cleaning_charge': newCleaningFee,
-                              'has_size_preference': hasSizePref,
                               'allowed_cutting_types': currentCuttings,
                               'image_url': editPhotoUrl,
                             });
@@ -2931,7 +2881,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
                               item['available'] = isAvailable && (newStock > 0);
                               item['has_cleaning'] = hasCleaning;
                               item['cleaning_charge'] = newCleaningFee;
-                              item['has_size_preference'] = hasSizePref;
                               item['allowed_cutting_types'] = currentCuttings;
                               item['image_url'] = editPhotoUrl;
                             });
@@ -3027,7 +2976,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
     final sellingPrice = (item['price_per_kg'] as num? ?? item['price'] as num? ?? 0).toDouble();
     final stock = (item['stock_kg'] as num? ?? 0).toDouble();
     final minOrderKg = (item['min_order_kg'] as num? ?? 0.5).toDouble();
-    final hasSizePref = (item['has_size_preference'] ?? true) == true;
     final isAvail = (item['available'] == true) && stock > 0;
     final isLowStock = stock > 0 && stock < 5.0;
     final isOutOfStock = !isAvail || stock <= 0;

@@ -373,6 +373,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
     required double finalPrice,
     double? originalWeight,
     String? weightProofUrl,
+    List<Map<String, dynamic>>? itemUpdates,
   }) async {
     final success = await _repo.updateOrderWeight(
       orderId: orderId,
@@ -380,24 +381,41 @@ class OrdersNotifier extends Notifier<OrdersState> {
       finalPrice: finalPrice,
       originalWeight: originalWeight,
       weightProofUrl: weightProofUrl,
+      itemUpdates: itemUpdates,
     );
     if (success) {
       final isWeightChanged = originalWeight != null && (confirmedWeight - originalWeight).abs() > 0.02;
       final currentList = List<Map<String, dynamic>>.from(state.orders);
       final idx = currentList.indexWhere((o) => o['id'] == orderId);
       if (idx != -1) {
-        currentList[idx] = {
-          ...currentList[idx],
-          'confirmed_weight_kg': confirmedWeight,
-          'total_price': finalPrice,
-          'is_weight_adjusted': isWeightChanged,
-          'proposed_total_price': finalPrice,
-          'weight_update_status': isWeightChanged ? 'pending_approval' : 'approved',
-          'status': 'weight_confirmed',
-        };
+        final orderMap = Map<String, dynamic>.from(currentList[idx]);
+        orderMap['confirmed_weight_kg'] = confirmedWeight;
+        orderMap['total_price'] = finalPrice;
+        orderMap['is_weight_adjusted'] = isWeightChanged;
+        orderMap['proposed_total_price'] = finalPrice;
+        orderMap['weight_update_status'] = isWeightChanged ? 'pending_approval' : 'approved';
+        orderMap['status'] = 'weight_confirmed';
+
         if (weightProofUrl != null) {
-          currentList[idx]['weight_proof_url'] = weightProofUrl;
+          orderMap['weight_proof_url'] = weightProofUrl;
         }
+
+        if (itemUpdates != null && itemUpdates.isNotEmpty) {
+          final existingItems = (orderMap['order_items'] as List? ?? []).map((it) => Map<String, dynamic>.from(it)).toList();
+          for (final u in itemUpdates) {
+            final uId = u['order_item_id'] ?? u['id'];
+            final itIdx = existingItems.indexWhere((it) => it['id'] == uId);
+            if (itIdx != -1) {
+              final newW = (u['confirmed_quantity_kg'] as num? ?? u['proposed_quantity_kg'] as num?)?.toDouble();
+              if (newW != null) {
+                existingItems[itIdx]['quantity_kg'] = newW;
+              }
+            }
+          }
+          orderMap['order_items'] = existingItems;
+        }
+
+        currentList[idx] = orderMap;
         state = state.copyWith(orders: currentList);
       }
     }
@@ -434,10 +452,9 @@ final ordersNotifierProvider = NotifierProvider<OrdersNotifier, OrdersState>(Ord
 
 /// Memoized provider for orders matching the selected stage and search query
 final filteredOrdersProvider = Provider<List<Map<String, dynamic>>>((ref) {
-  final state = ref.watch(ordersNotifierProvider);
-  final allOrders = state.orders;
-  final stage = state.selectedStage;
-  final query = state.searchQuery;
+  final allOrders = ref.watch(ordersNotifierProvider.select((s) => s.orders));
+  final stage = ref.watch(ordersNotifierProvider.select((s) => s.selectedStage));
+  final query = ref.watch(ordersNotifierProvider.select((s) => s.searchQuery));
 
   return allOrders.where((order) {
     final rawStatus = (order['status'] as String? ?? 'new_order');

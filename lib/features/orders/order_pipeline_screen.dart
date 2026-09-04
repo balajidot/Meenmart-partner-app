@@ -162,8 +162,10 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
     _searchDebounce?.cancel();
     _searchFocusNode.dispose();
     _searchController.dispose();
+    AppUpdateService().dispose(); // FIX: cleanup realtime channel to prevent WebSocket leak
     super.dispose();
   }
+
 
   void _switchToStage(OrderStatusPipeline newStage) {
     final currentStage = ref.read(ordersNotifierProvider).selectedStage;
@@ -468,6 +470,8 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
 
     final totalPrice = (order['total_price'] as num? ?? (totalWeight * 500.0)).toDouble();
     final avgPricePerKg = totalWeight > 0 ? (totalPrice / totalWeight) : 500.0;
+    final deliveryCharge = (order['delivery_charge'] as num? ?? 0.0).toDouble();
+    final discountAmount = (order['discount_amount'] as num? ?? 0.0).toDouble();
 
     showDialog(
       context: context,
@@ -477,14 +481,17 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
         pricePerKg: avgPricePerKg,
         orderedTotalPrice: totalPrice,
         orderItems: orderItems,
+        deliveryCharge: deliveryCharge,
+        discountAmount: discountAmount,
         themeColor: OrderCardWidget.getStageLiveColor(nextStage),
-        onConfirmed: (confirmedWeight, finalPrice, weightProofUrl) async {
+        onConfirmed: (confirmedWeight, finalPrice, weightProofUrl, verifiedItems) async {
           await notifier.updateWeight(
             orderId: order['id'],
             confirmedWeight: confirmedWeight,
             finalPrice: finalPrice,
             originalWeight: totalWeight,
             weightProofUrl: weightProofUrl,
+            itemUpdates: verifiedItems,
           );
           notifier.setSelectedStage(nextStage);
           AppHaptics.success();

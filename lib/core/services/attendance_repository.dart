@@ -311,8 +311,22 @@ class AttendanceRepository {
 
     final nowTimeFmt = DateFormat('hh:mm a').format(now);
 
+    // Resolve store_staff id for relational integrity
+    String? resolvedStaffId;
+    try {
+      final staffRow = await _client
+          .from('store_staff')
+          .select('id')
+          .eq('auth_id', userId)
+          .maybeSingle();
+      if (staffRow != null && staffRow['id'] != null) {
+        resolvedStaffId = staffRow['id'].toString();
+      }
+    } catch (_) {}
+
     final payload = {
       'auth_id': userId,
+      if (resolvedStaffId != null) 'staff_id': resolvedStaffId,
       'staff_name': staffName,
       'date': dateStr,
       'shift_window': '07:00 AM - 05:00 PM',
@@ -379,10 +393,24 @@ class AttendanceRepository {
     final durationStr = todayRecord.checkInDateTime != null ? '${now.difference(todayRecord.checkInDateTime!).inHours}h ${now.difference(todayRecord.checkInDateTime!).inMinutes.remainder(60)}m' : '8h 00m';
 
     try {
-      await _client.from('staff_attendance').update({
+      final isUuid = RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+      ).hasMatch(todayRecord.id);
+
+      final updatePayload = {
         'check_out_time': now.toIso8601String(),
         'status': 'COMPLETED',
-      }).eq('id', todayRecord.id);
+      };
+
+      if (isUuid) {
+        await _client.from('staff_attendance').update(updatePayload).eq('id', todayRecord.id);
+      } else {
+        await _client
+            .from('staff_attendance')
+            .update(updatePayload)
+            .eq('auth_id', userId)
+            .eq('date', todayRecord.date);
+      }
 
       await _client.from('manager_activity_logs').insert({
         'staff_name': staffName,

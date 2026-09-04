@@ -183,7 +183,7 @@ class PartnerDrawer extends ConsumerWidget {
 
             const SizedBox(height: 6),
 
-            // 2. CLEAN NAVIGATION LIST
+            // 2. DYNAMIC ROLE-AWARE NAVIGATION LIST
             Expanded(
               child: ListView(
                 physics: const BouncingScrollPhysics(),
@@ -192,33 +192,74 @@ class PartnerDrawer extends ConsumerWidget {
                   // SECTION: OPERATIONS
                   _buildSectionHeader('OPERATIONS'),
                   const SizedBox(height: 6),
-                  _buildNavItem(
-                    context: context,
-                    icon: Icons.inventory_2_rounded,
-                    title: 'Live Orders',
-                    route: '/store-dashboard',
-                    isSelected: currentRoute == '/store-dashboard' || currentRoute.isEmpty || currentRoute == '/',
-                    color: const Color(0xFF059669),
-                  ),
-                  const SizedBox(height: 6),
-                  _buildNavItem(
-                    context: context,
-                    icon: Icons.bar_chart_rounded,
-                    title: 'Analytics',
-                    route: '/analytics',
-                    isSelected: currentRoute == '/analytics',
-                    color: const Color(0xFF2563EB),
-                  ),
-                  const SizedBox(height: 6),
-                  _buildNavItem(
-                    context: context,
-                    icon: Icons.account_balance_wallet_rounded,
-                    title: 'Cashflow & Ledger',
-                    route: '/cashflow',
-                    isSelected: currentRoute == '/cashflow' || currentRoute == '/expenses',
-                    color: const Color(0xFF059669),
-                  ),
-                  const SizedBox(height: 6),
+
+                  // Store Manager & Admin Operations
+                  if (roles.contains('admin') || roles.contains('store_manager')) ...[
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.inventory_2_rounded,
+                      title: 'Live Orders',
+                      route: '/store-dashboard',
+                      isSelected: currentRoute == '/store-dashboard' || currentRoute.isEmpty || currentRoute == '/',
+                      color: const Color(0xFF059669),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.set_meal_rounded,
+                      title: 'Stock & Availability',
+                      route: '/stock-update',
+                      isSelected: currentRoute == '/stock-update',
+                      color: const Color(0xFF0D9488),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.bar_chart_rounded,
+                      title: 'Analytics',
+                      route: '/analytics',
+                      isSelected: currentRoute == '/analytics',
+                      color: const Color(0xFF2563EB),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.account_balance_wallet_rounded,
+                      title: 'Cashflow & Ledger',
+                      route: '/cashflow',
+                      isSelected: currentRoute == '/cashflow' || currentRoute == '/expenses',
+                      color: const Color(0xFF059669),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+
+                  // Delivery Hub (For Delivery Heroes, Multi-role, and Admins)
+                  if (roles.contains('delivery_partner') || roles.contains('admin')) ...[
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.delivery_dining_rounded,
+                      title: 'Delivery Hub',
+                      route: '/delivery-dashboard',
+                      isSelected: currentRoute == '/delivery-dashboard',
+                      color: const Color(0xFF2563EB),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+
+                  // Marketing Hub (For Marketing Executives and Admins)
+                  if (roles.contains('marketing_executive') || roles.contains('marketing') || roles.contains('admin')) ...[
+                    _buildNavItem(
+                      context: context,
+                      icon: Icons.campaign_rounded,
+                      title: 'Marketing Hub',
+                      route: '/marketing-dashboard',
+                      isSelected: currentRoute == '/marketing-dashboard',
+                      color: const Color(0xFFD97706),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+
+                  // Common to all roles: Attendance & Shifts
                   _buildNavItem(
                     context: context,
                     icon: Icons.fingerprint_rounded,
@@ -243,9 +284,18 @@ class PartnerDrawer extends ConsumerWidget {
                   const SizedBox(height: 6),
                   _buildNavItem(
                     context: context,
+                    icon: Icons.support_agent_rounded,
+                    title: 'Store Support',
+                    route: '/support',
+                    isSelected: currentRoute == '/support' || currentRoute == '/support-chat',
+                    color: const Color(0xFF059669),
+                  ),
+                  const SizedBox(height: 6),
+                  _buildNavItem(
+                    context: context,
                     icon: Icons.system_update_rounded,
                     title: 'Check for Updates',
-                    route: '/updates',
+                    route: '',
                     isSelected: false,
                     color: const Color(0xFF059669),
                     onCustomTap: () => AppUpdateService().checkAndPrompt(context, isManual: true),

@@ -46,17 +46,17 @@ class _LogActivityScreenState extends ConsumerState<LogActivityScreen> {
       final authState = ref.read(authNotifierProvider);
       final profile = authState.staffProfile;
       final staffName = profile?['name'] ?? 'Marketing Executive';
-      final staffId = profile?['id']?.toString() ?? profile?['auth_id']?.toString() ?? clientUserId();
-      if (staffId == null || staffId.isEmpty) {
-        throw StateError('Your staff identity is unavailable. Please sign in again.');
-      }
+      final staffDbId = profile?['id']?.toString();
+      final isUuid = staffDbId != null && RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+      ).hasMatch(staffDbId);
 
       await db.from('marketing_activities').insert({
         'activity_type': _activityType,
         'location': _locationController.text.trim(),
         'notes': _notesController.text.trim(),
         'staff_name': staffName,
-        'staff_id': staffId,
+        if (isUuid) 'exec_id': staffDbId,
         'branch_location': profile?['branch_location'] ?? 'Pulicat Central Store',
         'created_at': DateTime.now().toIso8601String(),
       });

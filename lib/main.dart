@@ -256,16 +256,47 @@ String? _dashboardForRoles(Set<String> roles) {
 }
 
 bool _isRouteAllowedForRoles(String route, Set<String> roles) {
-  if (roles.contains('admin') || roles.contains('store_manager')) {
-    return route != '/delivery-dashboard' && route != '/marketing-dashboard';
+  // Admins have universal access across all operational screens
+  if (roles.contains('admin')) {
+    return true;
   }
-  const commonRoutes = {'/check-in', '/account', '/profile-setup', '/support', '/support-chat'};
+
+  // Common screens available to all authenticated partners
+  const commonRoutes = {
+    '/check-in',
+    '/account',
+    '/profile-setup',
+    '/support',
+    '/support-chat',
+    '/onboarding',
+    '/welcome',
+  };
+  if (commonRoutes.contains(route)) return true;
+
+  // Store Manager routes
+  if (roles.contains('store_manager')) {
+    const storeRoutes = {
+      '/store-dashboard',
+      '/analytics',
+      '/cashflow',
+      '/expenses',
+      '/stock-update',
+      '/delivery-dashboard',
+      '/marketing-dashboard',
+    };
+    if (storeRoutes.contains(route)) return true;
+  }
+
+  // Delivery Partner routes
   if (roles.contains('delivery_partner')) {
-    return commonRoutes.contains(route) || route == '/delivery-dashboard';
+    if (route == '/delivery-dashboard') return true;
   }
+
+  // Marketing Executive routes
   if (roles.contains('marketing_executive') || roles.contains('marketing')) {
-    return commonRoutes.contains(route) || route == '/marketing-dashboard';
+    if (route == '/marketing-dashboard') return true;
   }
+
   return false;
 }
 

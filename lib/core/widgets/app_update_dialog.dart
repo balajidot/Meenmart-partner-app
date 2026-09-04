@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/app_update_info.dart';
 import '../services/haptic_service.dart';
@@ -34,6 +35,8 @@ class AppUpdateDialog extends StatefulWidget {
 
 class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProviderStateMixin {
   bool _isDownloading = false;
+  bool _isReadyToInstall = false;
+  File? _downloadedFile;
   double _progress = 0.0;
   int _receivedBytes = 0;
   int _totalBytes = 0;
@@ -69,6 +72,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
 
     setState(() {
       _isDownloading = true;
+      _isReadyToInstall = false;
       _progress = 0.0;
       _receivedBytes = 0;
       _totalBytes = 0;
@@ -86,67 +90,124 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
 
       _totalBytes = response.contentLength ?? (26 * 1024 * 1024); // Fallback estimate ~26MB
 
-      final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/meenmart_update.apk');
+      // Use External Cache Directory so Android Package Installer can access the APK without sandbox restrictions
+      Directory? baseDir;
+      if (Platform.isAndroid) {
+        final extDirs = await getExternalCacheDirectories();
+        if (extDirs != null && extDirs.isNotEmpty) {
+          baseDir = extDirs.first;
+        }
+      }
+      baseDir ??= await getTemporaryDirectory();
+
+      final file = File('${baseDir.path}/meenmart_store_update.apk');
       if (await file.exists()) {
         await file.delete();
       }
 
       final sink = file.openWrite();
-      await response.stream.listen(
-        (chunk) {
-          _receivedBytes += chunk.length;
-          sink.add(chunk);
-          if (mounted) {
-            setState(() {
-              _progress = _totalBytes > 0 ? (_receivedBytes / _totalBytes).clamp(0.0, 1.0) : 0.5;
-            });
-          }
-        },
-        onDone: () async {
-          await sink.flush();
-          await sink.close();
-          client.close();
+      await for (final chunk in response.stream) {
+        _receivedBytes += chunk.length;
+        sink.add(chunk);
+        if (mounted) {
+          setState(() {
+            _progress = _totalBytes > 0 ? (_receivedBytes / _totalBytes).clamp(0.0, 1.0) : 0.5;
+          });
+        }
+      }
 
-          if (mounted) {
-            AppHaptics.heavyImpact();
-            SoundService().playSuccessChime();
+      await sink.flush();
+      await sink.close();
+      client.close();
 
-            // Trigger Android System Package Installer
-            final result = await OpenFilex.open(
-              file.path,
-              type: 'application/vnd.android.package-archive',
-            );
+      if (mounted) {
+        AppHaptics.heavyImpact();
+        SoundService().playSuccessChime();
 
-            if (result.type != ResultType.done && mounted) {
-              // If automatic intent fails, prompt fallback
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('APK saved at ${file.path}. Opening installer...'),
-                  backgroundColor: const Color(0xFF059669),
-                ),
-              );
-            }
-          }
-        },
-        onError: (e) {
-          sink.close();
-          client.close();
-          if (mounted) {
-            setState(() {
-              _isDownloading = false;
-              _errorMessage = 'Download error: $e';
-            });
-          }
-        },
-        cancelOnError: true,
-      ).asFuture();
+        setState(() {
+          _isDownloading = false;
+          _isReadyToInstall = true;
+          _downloadedFile = file;
+        });
+
+        // Automatically trigger Android System Package Installer
+        await _installApk(file);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isDownloading = false;
           _errorMessage = 'Download error: $e';
         });
+      }
+    }
+  }
+
+  Future<void> _installApk(File file) async {
+    try {
+      AppHaptics.heavyImpact();
+
+      if (!await file.exists()) {
+        setState(() {
+          _errorMessage = 'APK file not found. Please download again.';
+          _isReadyToInstall = false;
+        });
+        return;
+      }
+
+      // Check and request Android Install Unknown Apps permission
+      if (Platform.isAndroid) {
+        final installPermissionStatus = await Permission.requestInstallPackages.status;
+        if (!installPermissionStatus.isGranted) {
+          final requestResult = await Permission.requestInstallPackages.request();
+          if (!requestResult.isGranted) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'அப்டேட் நிறுவ "Allow from this source" அனுமதியை இயக்கவும் (Enable Install Permission in Settings).',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                  ),
+                  backgroundColor: const Color(0xFFDC2626),
+                  duration: const Duration(seconds: 5),
+                  action: SnackBarAction(
+                    label: 'SETTINGS',
+                    textColor: Colors.white,
+                    onPressed: () => openAppSettings(),
+                  ),
+                ),
+              );
+            }
+            return;
+          }
+        }
+      }
+
+      final result = await OpenFilex.open(
+        file.path,
+        type: 'application/vnd.android.package-archive',
+      );
+
+      if (result.type != ResultType.done && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Installer status: ${result.message}. நீங்கள் மேலேயுள்ள பட்டனைத் தொட்டு மீண்டும் முயற்சிக்கலாம்.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: const Color(0xFFD97706),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Installation error: $e'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
       }
     }
   }
@@ -493,55 +554,125 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
               ),
             ],
 
-            // 1-Click Update Now Primary Button (or Install Prompt when done)
+            // 1-Click Update Now / Install Primary Button
             if (!_isDownloading) ...[
-              Container(
-                width: double.infinity,
-                height: 48,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF059669), Color(0xFF047857)],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF059669).withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
+              if (_isReadyToInstall && _downloadedFile != null) ...[
+                // READY TO INSTALL BUTTON (Prominent Emerald Green)
+                Container(
+                  width: double.infinity,
+                  height: 50,
+                  decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(14),
-                    onTap: _startNativeInAppDownload,
-                    child: Center(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.download_rounded, color: Colors.white, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'இப்போதே புதுப்பிக்கவும் (UPDATE NOW)',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                              letterSpacing: 0.3,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF10B981), Color(0xFF059669)],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () => _installApk(_downloadedFile!),
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.install_mobile_rounded, color: Colors.white, size: 22),
+                            const SizedBox(width: 8),
+                            Text(
+                              'இப்போதே நிறுவுக (INSTALL UPDATE NOW)',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 0.3,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(height: 8),
+                Text(
+                  'டவுன்லோட் முடிந்தது. இன்ஸ்டாலர் தானாகத் திறக்காவிட்டால் மேலே தொடவும்.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF059669),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                TextButton.icon(
+                  onPressed: _startNativeInAppDownload,
+                  icon: const Icon(Icons.refresh_rounded, size: 15, color: Color(0xFF64748B)),
+                  label: Text(
+                    'மீண்டும் டவுன்லோட் செய்க (Re-download)',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+              ] else ...[
+                // START DOWNLOAD BUTTON
+                Container(
+                  width: double.infinity,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF059669), Color(0xFF047857)],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF059669).withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: _startNativeInAppDownload,
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.download_rounded, color: Colors.white, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              'இப்போதே புதுப்பிக்கவும் (UPDATE NOW)',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
 
-            // Fallback / Later Actions
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 6),
+            // Browser Fallback (Available when download completes, fails, or needed)
+            if (_errorMessage != null || _isReadyToInstall) ...[
+              const SizedBox(height: 4),
               TextButton.icon(
                 onPressed: _fallbackBrowserDownload,
                 icon: const Icon(Icons.open_in_browser_rounded, size: 16, color: Color(0xFF059669)),

@@ -100,14 +100,25 @@ final customerOrderChatProvider = StreamProvider.autoDispose
 });
 
 class SupportChatService {
+  // UUID validation regex — ensures we never pass "" to a uuid column
+  static final _uuidRegex = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  static String? _validUuid(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    return _uuidRegex.hasMatch(raw.trim()) ? raw.trim() : null;
+  }
+
   /// Store staff sends message to customer for this order
   static Future<void> sendStoreMessageToCustomer({
     required String customerUserId,
     int? orderId,
     required String message,
   }) async {
+    final safeUserId = _validUuid(customerUserId);
     await Supabase.instance.client.from('chat_messages').insert({
-      'user_id': customerUserId,
+      if (safeUserId != null) 'user_id': safeUserId,
       'order_id': orderId,
       'message': message,
       'is_admin_reply': true, // Sent by Store / Operations
@@ -120,11 +131,13 @@ class SupportChatService {
     int? orderId,
     required String message,
   }) async {
+    final safeUserId = _validUuid(userId);
     await Supabase.instance.client.from('chat_messages').insert({
-      'user_id': userId,
+      if (safeUserId != null) 'user_id': safeUserId,
       'order_id': orderId,
       'message': message,
       'is_admin_reply': true,
     });
   }
 }
+

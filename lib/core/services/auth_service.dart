@@ -37,7 +37,17 @@ class AuthService {
       }
 
       final rawRoles = data['roles'];
-      if (rawRoles is! List || rawRoles.isEmpty) return null;
+      var rolesList = <String>[];
+      if (rawRoles is List) {
+        rolesList = rawRoles.map((e) => e.toString()).toList();
+      } else if (rawRoles is String && rawRoles.isNotEmpty) {
+        rolesList = [rawRoles];
+      } else if (data['role'] != null && data['role'].toString().isNotEmpty) {
+        rolesList = [data['role'].toString()];
+      }
+
+      if (rolesList.isEmpty) return null;
+      data['roles'] = rolesList;
       return data;
     } catch (e) {
       debugPrint('Error fetching staff profile: $e');

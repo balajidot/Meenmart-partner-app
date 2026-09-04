@@ -993,170 +993,158 @@ class OrderCardWidget extends StatelessWidget {
               ),
             ),
           ],
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: orderItems.length,
-            separatorBuilder: (context, index) => const Padding(
-              padding: EdgeInsets.symmetric(vertical: 6),
-              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
-            ),
-            itemBuilder: (context, idx) {
-              final it = orderItems[idx];
-              final fishData = it['fish_items'] is Map ? it['fish_items'] : null;
-              final itemName = fishData != null
-                  ? (fishData['name'] ?? fishData['name_en'] ?? it['item_name'] ?? 'Fresh Seafood')
-                  : (it['item_name'] ?? 'Fresh Seafood');
-              final itemTamil = fishData != null ? (fishData['tamil_name'] ?? '') : '';
-              final itemImage = fishData != null ? fishData['image_url'] as String? : null;
-              final qty = (it['quantity_kg'] as num? ?? 1.0).toDouble();
-              final rawCutting = it['cutting_type'] as String?;
-              final withCleaning = it['with_cleaning'] == true;
-              final cleaningFee = (it['cleaning_fee'] as num? ?? 0).toDouble();
-              final sizePref = (it['size_preference'] ?? '').toString().trim();
-
-              final pricePerKg = (it['price_per_kg'] as num? ?? fishData?['price_per_kg'] ?? 0).toDouble();
-              final itemTotal = (pricePerKg * qty) + cleaningFee;
-
-              final formattedQty = qty < 1.0
-                  ? '${(qty * 1000).toInt()}g'
-                  : '${qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 1)} kg';
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  OptimizedImage(
-                    imageUrl: itemImage,
-                    width: 44,
-                    height: 44,
-                    borderRadius: BorderRadius.circular(8),
+          Column(
+            children: [
+              for (int idx = 0; idx < orderItems.length; idx++) ...[
+                if (idx > 0)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 6),
+                    child: Divider(height: 1, color: Color(0xFFE2E8F0)),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                Builder(
+                  builder: (context) {
+                    final it = orderItems[idx];
+                    final fishData = it['fish_items'] is Map ? it['fish_items'] : null;
+                    final itemName = fishData != null
+                        ? (fishData['name'] ?? fishData['name_en'] ?? it['item_name'] ?? 'Fresh Seafood')
+                        : (it['item_name'] ?? 'Fresh Seafood');
+                    final itemTamil = fishData != null ? (fishData['tamil_name'] ?? '') : '';
+                    final itemImage = fishData != null ? fishData['image_url'] as String? : null;
+                    final qty = (it['quantity_kg'] as num? ?? 1.0).toDouble();
+                    final rawCutting = it['cutting_type'] as String?;
+                    final withCleaning = it['with_cleaning'] == true;
+                    final cleaningFee = (it['cleaning_fee'] as num? ?? 0).toDouble();
+
+                    final pricePerKg = (it['price_per_kg'] as num? ?? fishData?['price_per_kg'] ?? 0).toDouble();
+                    final itemTotal = (pricePerKg * qty) + cleaningFee;
+
+                    final formattedQty = qty < 1.0
+                        ? '${(qty * 1000).toInt()}g'
+                        : '${qty.toStringAsFixed(qty.truncateToDouble() == qty ? 0 : 1)} kg';
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Text(
-                          itemName.toString(),
-                          style: AppTextStyles.bodyLarge.copyWith(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF0F172A),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        OptimizedImage(
+                          imageUrl: itemImage,
+                          width: 44,
+                          height: 44,
+                          memCacheWidth: 88,
+                          memCacheHeight: 88,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        if (itemTamil.isNotEmpty) ...[
-                          Text(
-                            itemTamil,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              fontSize: 10.5,
-                              color: const Color(0xFF64748B),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                itemName.toString(),
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (itemTamil.isNotEmpty) ...[
+                                Text(
+                                  itemTamil,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    fontSize: 10.5,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                              const SizedBox(height: 2),
+                              Wrap(
+                                spacing: 4,
+                                runSpacing: 2,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Text(
+                                    formatCuttingTypeDisplay(rawCutting),
+                                    style: AppTextStyles.caption.copyWith(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF475569),
+                                    ),
+                                  ),
+                                  if (withCleaning) ...[
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFEF3C7),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: const Color(0xFFFDE68A)),
+                                      ),
+                                      child: Text(
+                                        cleaningFee > 0 ? 'Cleaned (+₹${cleaningFee.toStringAsFixed(0)})' : 'Cleaned',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFFB45309),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  ],
+                              ),
+                            ],
                           ),
-                        ],
-                        const SizedBox(height: 2),
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 2,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text(
-                              formatCuttingTypeDisplay(rawCutting),
-                              style: AppTextStyles.caption.copyWith(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF475569),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFECFDF5),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFA7F3D0)),
+                              ),
+                              child: Text(
+                                formattedQty,
+                                style: AppTextStyles.badge.copyWith(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w900,
+                                  color: const Color(0xFF059669),
+                                ),
                               ),
                             ),
-                            if (withCleaning) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFEF3C7),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFFFDE68A)),
-                                ),
-                                child: Text(
-                                  cleaningFee > 0 ? 'Cleaned (+₹${cleaningFee.toStringAsFixed(0)})' : 'Cleaned',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFFB45309),
-                                  ),
+                            const SizedBox(height: 3),
+                            if (itemTotal > 0) ...[
+                              Text(
+                                '₹${itemTotal.toStringAsFixed(0)}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                  color: const Color(0xFF0F172A),
                                 ),
                               ),
                             ],
-                            if (sizePref.isNotEmpty && sizePref.toLowerCase() != 'none') ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  sizePref,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF475569),
-                                  ),
+                            if (pricePerKg > 0) ...[
+                              Text(
+                                '₹${pricePerKg.toStringAsFixed(0)}/kg',
+                                style: GoogleFonts.inter(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF64748B),
                                 ),
                               ),
                             ],
                           ],
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFECFDF5),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFA7F3D0)),
-                        ),
-                        child: Text(
-                          formattedQty,
-                          style: AppTextStyles.badge.copyWith(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w900,
-                            color: const Color(0xFF059669),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      if (itemTotal > 0) ...[
-                        Text(
-                          '₹${itemTotal.toStringAsFixed(0)}',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            color: const Color(0xFF0F172A),
-                          ),
-                        ),
-                      ],
-                      if (pricePerKg > 0) ...[
-                        Text(
-                          '₹${pricePerKg.toStringAsFixed(0)}/kg',
-                          style: GoogleFonts.inter(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              );
-            },
+                    );
+                  },
+                ),
+              ],
+            ],
           ),
           if (deliveryCharge > 0 || discountAmount > 0 || walletAmount > 0 || paymentMethod.isNotEmpty) ...[
             const Padding(

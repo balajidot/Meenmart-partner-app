@@ -48,14 +48,68 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
     setState(() => _isLoading = true);
     try {
       final db = Supabase.instance.client;
-      final userId = db.auth.currentUser?.id;
-      if (userId == null) throw StateError('Session expired');
-      final partner = await db
+      final user = db.auth.currentUser;
+      if (user == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
+      // Check partner row by user_id first
+      var partner = await db
           .from('delivery_partners')
           .select('id')
-          .eq('user_id', userId)
+          .eq('user_id', user.id)
           .maybeSingle();
-      if (partner == null) throw StateError('No delivery-partner profile is linked to this account');
+
+      // Fallback: Check partner row by phone or allow store managers/admins to view all
+      if (partner == null) {
+        final staff = await db
+            .from('store_staff')
+            .select('phone, roles')
+            .eq('auth_id', user.id)
+            .maybeSingle();
+
+        final phone = staff?['phone']?.toString();
+        if (phone != null && phone.isNotEmpty) {
+          partner = await db
+              .from('delivery_partners')
+              .select('id')
+              .eq('phone', phone)
+              .maybeSingle();
+        }
+
+        final roles = (staff?['roles'] as List<dynamic>? ?? []).map((e) => e.toString()).toSet();
+        final isAdminOrManager = roles.contains('admin') || roles.contains('store_manager');
+
+        // If Store Manager / Admin viewing the delivery hub, show all active delivery orders
+        if (partner == null && isAdminOrManager) {
+          final allDeliveryOrders = await db
+              .from('orders')
+              .select('*, order_items(*, fish_items(*))')
+              .inFilter('status', ['out_for_delivery', 'delivered'])
+              .order('created_at', ascending: false)
+              .limit(50);
+
+          if (mounted) {
+            setState(() {
+              _liveOrders = List<Map<String, dynamic>>.from(allDeliveryOrders);
+              _isLoading = false;
+            });
+          }
+          return;
+        }
+      }
+
+      if (partner == null) {
+        if (mounted) {
+          setState(() {
+            _liveOrders = [];
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
       final response = await db
           .from('orders')
           .select('*, order_items(*, fish_items(*))')

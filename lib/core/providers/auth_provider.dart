@@ -54,17 +54,27 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> refreshProfile() async {
     state = state.copyWith(isLoading: true);
     final user = Supabase.instance.client.auth.currentUser;
-    final profile = await AuthService().getCurrentStaffProfile();
-    if (user != null && profile == null) {
+    if (user == null) {
+      state = AuthState(user: null, staffProfile: null, isLoading: false);
+      return;
+    }
+
+    var profile = await AuthService().getCurrentStaffProfile();
+    // Brief retry in case of momentary connection latency
+    if (profile == null) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      profile = await AuthService().getCurrentStaffProfile();
+    }
+
+    if (profile == null) {
       // A valid Supabase account alone is not permission to use this staff app.
       await AuthService().signOut();
       state = AuthState(user: null, staffProfile: null, isLoading: false);
       return;
     }
+
     state = AuthState(user: user, staffProfile: profile, isLoading: false);
-    if (user != null && profile != null) {
-      unawaited(NotificationService().syncCurrentToken());
-    }
+    unawaited(NotificationService().syncCurrentToken());
   }
 
   Future<void> signOut() async {

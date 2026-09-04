@@ -183,120 +183,120 @@ class _PackingVerificationDialogState extends State<PackingVerificationDialog> {
                         style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
                       ),
                     ] else ...[
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: orderItems.length,
-                        separatorBuilder: (context, idx) => const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Divider(height: 1, color: Color(0xFFE2E8F0)),
-                        ),
-                        itemBuilder: (context, idx) {
-                          final it = orderItems[idx];
-                          final fish = it['fish_items'] is Map ? it['fish_items'] : null;
-                          final name = fish != null ? (fish['name'] ?? fish['name_en'] ?? it['item_name'] ?? 'Seafood') : (it['item_name'] ?? 'Seafood');
-                          final tamil = fish != null ? (fish['tamil_name'] ?? '') : '';
-                          final itemQty = (it['quantity_kg'] as num? ?? 1.0).toDouble();
-                          final itemCutting = (it['cutting_type'] ?? 'Cleaned').toString();
-                          final withClean = it['with_cleaning'] == true;
-                          final cleaningFee = (it['cleaning_fee'] as num? ?? 0).toDouble();
-                          final pricePerKg = (it['price_per_kg'] as num? ?? fish?['price_per_kg'] ?? 0).toDouble();
-                          final itemTotal = (pricePerKg * itemQty) + cleaningFee;
+                      for (int idx = 0; idx < orderItems.length; idx++) ...[
+                        if (idx > 0)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+                          ),
+                        Builder(
+                          builder: (context) {
+                            final it = orderItems[idx];
+                            final fish = it['fish_items'] is Map ? it['fish_items'] : null;
+                            final name = fish != null ? (fish['name'] ?? fish['name_en'] ?? it['item_name'] ?? 'Seafood') : (it['item_name'] ?? 'Seafood');
+                            final tamil = fish != null ? (fish['tamil_name'] ?? '') : '';
+                            final itemQty = (it['quantity_kg'] as num? ?? 1.0).toDouble();
+                            final itemCutting = (it['cutting_type'] ?? 'Cleaned').toString();
+                            final withClean = it['with_cleaning'] == true;
+                            final cleaningFee = (it['cleaning_fee'] as num? ?? 0).toDouble();
+                            final pricePerKg = (it['price_per_kg'] as num? ?? fish?['price_per_kg'] ?? 0).toDouble();
+                            final itemTotal = (pricePerKg * itemQty) + cleaningFee;
 
-                          final formattedItemQty = itemQty < 1.0
-                              ? '${(itemQty * 1000).toInt()}g'
-                              : '${itemQty.toStringAsFixed(itemQty.truncateToDouble() == itemQty ? 0 : 1)} kg';
+                            final formattedItemQty = itemQty < 1.0
+                                ? '${(itemQty * 1000).toInt()}g'
+                                : '${itemQty.toStringAsFixed(itemQty.truncateToDouble() == itemQty ? 0 : 1)} kg';
 
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name.toString(),
-                                      style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
-                                    ),
-                                    if (tamil.isNotEmpty) ...[
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
                                       Text(
-                                        tamil,
-                                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
+                                        name.toString(),
+                                        style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                                      ),
+                                      if (tamil.isNotEmpty) ...[
+                                        Text(
+                                          tamil,
+                                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 4),
+                                      Wrap(
+                                        spacing: 4,
+                                        runSpacing: 2,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6.5, vertical: 2.5),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFEF3C7),
+                                              borderRadius: BorderRadius.circular(5),
+                                              border: Border.all(color: const Color(0xFFFDE68A)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.content_cut_rounded, size: 12, color: Color(0xFFD97706)),
+                                                const SizedBox(width: 4),
+                                                Flexible(
+                                                  child: Text(
+                                                    _formatCuttingType(itemCutting),
+                                                    style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFFB45309)),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          if (withClean) ...[
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFECFDF5),
+                                                borderRadius: BorderRadius.circular(5),
+                                                border: Border.all(color: const Color(0xFFA7F3D0)),
+                                              ),
+                                              child: Text(
+                                                cleaningFee > 0 ? 'Cleaned (+₹${cleaningFee.toStringAsFixed(0)})' : 'Cleaned',
+                                                style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.w800, color: const Color(0xFF059669)),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ],
-                                    const SizedBox(height: 4),
-                                    Wrap(
-                                      spacing: 4,
-                                      runSpacing: 2,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6.5, vertical: 2.5),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFFEF3C7),
-                                            borderRadius: BorderRadius.circular(5),
-                                            border: Border.all(color: const Color(0xFFFDE68A)),
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.content_cut_rounded, size: 12, color: Color(0xFFD97706)),
-                                              const SizedBox(width: 4),
-                                              Flexible(
-                                                child: Text(
-                                                  _formatCuttingType(itemCutting),
-                                                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFFB45309)),
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (withClean) ...[
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFECFDF5),
-                                              borderRadius: BorderRadius.circular(5),
-                                              border: Border.all(color: const Color(0xFFA7F3D0)),
-                                            ),
-                                            child: Text(
-                                              cleaningFee > 0 ? 'Cleaned (+₹${cleaningFee.toStringAsFixed(0)})' : 'Cleaned',
-                                              style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.w800, color: const Color(0xFF059669)),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: _brandColor.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        formattedItemQty,
+                                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w900, color: _brandColor),
+                                      ),
                                     ),
+                                    if (itemTotal > 0) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '₹${itemTotal.toStringAsFixed(0)}',
+                                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                      ),
+                                    ],
                                   ],
                                 ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: _brandColor.withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      formattedItemQty,
-                                      style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w900, color: _brandColor),
-                                    ),
-                                  ),
-                                  if (itemTotal > 0) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '₹${itemTotal.toStringAsFixed(0)}',
-                                      style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
                     ],
                   ],
                 ),

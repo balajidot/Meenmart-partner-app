@@ -50,8 +50,9 @@ class InventoryRepository {
     try {
       final rows = await _db
           .from('fish_items')
-          .select('id, name, tamil_name, category, price_per_kg, market_price_per_kg, stock_kg, is_available, is_today_catch, image_url, description, minimum_order_kg, badge_tag')
-          .order('id', ascending: true);
+          .select('id, name, tamil_name, category, price_per_kg, stock_kg, available, image_url, min_order_kg, badge, has_cleaning, cleaning_charge, allowed_cutting_types, display_order')
+          .eq('is_deleted', false)
+          .order('display_order', ascending: true);
 
       _cachedInventory = List<Map<String, dynamic>>.from(rows);
       return _cachedInventory;
@@ -66,20 +67,19 @@ class InventoryRepository {
     double? stockKg,
     double? pricePerKg,
     bool? isAvailable,
-    bool? isTodayCatch,
   }) async {
     try {
-      final updateData = <String, dynamic>{
-        'updated_at': DateTime.now().toIso8601String(),
-      };
+      final updateData = <String, dynamic>{};
       if (stockKg != null) updateData['stock_kg'] = stockKg;
       if (pricePerKg != null) updateData['price_per_kg'] = pricePerKg;
-      if (isAvailable != null) updateData['is_available'] = isAvailable;
-      if (isTodayCatch != null) updateData['is_today_catch'] = isTodayCatch;
+      // FIX: DB column is 'available', not 'is_available'
+      if (isAvailable != null) updateData['available'] = isAvailable;
+
+      if (updateData.isEmpty) return true; // Nothing to update
 
       await _db.from('fish_items').update(updateData).eq('id', itemId);
 
-      // Mutate local cache
+      // Mutate local cache — sync both 'available' and legacy 'is_available' keys
       final idx = _cachedInventory.indexWhere((it) => it['id'] == itemId);
       if (idx != -1) {
         _cachedInventory[idx] = {
