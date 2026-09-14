@@ -2,7 +2,10 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
+import '../services/inventory_repository.dart';
+import '../services/order_repository.dart';
 import '../services/notification_service.dart';
+import '../widgets/secure_staff_image.dart';
 
 class AuthState {
   final User? user;
@@ -35,6 +38,9 @@ class AuthNotifier extends Notifier<AuthState> {
       if (event == AuthChangeEvent.signedIn) {
         await refreshProfile();
       } else if (event == AuthChangeEvent.signedOut) {
+        clearSecureStaffImageCache();
+        OrderRepository().clearCache();
+        InventoryRepository().clearCache();
         state = AuthState(user: null, staffProfile: null, isLoading: false);
       }
     });

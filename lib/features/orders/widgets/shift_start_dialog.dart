@@ -174,9 +174,9 @@ class _ShiftStartDialogState extends State<ShiftStartDialog> {
   }
 
   Future<void> _submitShiftStart() async {
-    if (!_isLocationPermissionGranted || _realLat == null) {
+    if (!_isLocationPermissionGranted || _realLat == null || _realLng == null) {
       await _fetchRealGpsLocation();
-      if (!_isLocationPermissionGranted || _realLat == null) {
+      if (!_isLocationPermissionGranted || _realLat == null || _realLng == null) {
         if (!mounted) return;
         AppHaptics.error();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -235,46 +235,38 @@ class _ShiftStartDialogState extends State<ShiftStartDialog> {
         }
       } catch (_) {}
 
-      String? photoUrl;
-      try {
-        await client.storage.from('staff-checkins').uploadBinary(
-          fileName,
-          uploadBytes,
-          fileOptions: const FileOptions(contentType: 'image/jpeg', cacheControl: '3600', upsert: true),
-        );
-        photoUrl = client.storage.from('staff-checkins').getPublicUrl(fileName);
-      } catch (stErr) {
-        debugPrint('Storage checkin upload notice: $stErr');
-      }
+      await client.storage.from('staff-checkins').uploadBinary(
+        fileName,
+        uploadBytes,
+        fileOptions: const FileOptions(contentType: 'image/jpeg', cacheControl: '3600', upsert: false),
+      );
 
-      try {
-        final authUser = client.auth.currentUser;
-        final finalLat = _realLat ?? 13.4217;
-        final finalLng = _realLng ?? 80.3228;
-        final locationLabel = 'Live GPS (${finalLat.toStringAsFixed(4)}° N, ${finalLng.toStringAsFixed(4)}° E)';
+      final authUser = client.auth.currentUser;
+      if (authUser == null) throw StateError('Your session has expired. Please sign in again.');
+      final finalLat = _realLat!;
+      final finalLng = _realLng!;
+      final locationLabel = 'Live GPS (${finalLat.toStringAsFixed(4)}° N, ${finalLng.toStringAsFixed(4)}° E)';
 
-        await client.from('staff_attendance').insert({
-          'auth_id': authUser?.id ?? widget.staffId,
-          'staff_name': widget.staffName,
-          'date': dateStr,
-          'shift_window': _shiftWindow,
-          'check_in_time': now.toIso8601String(),
-          'status': 'present',
-          'is_on_time': isOnTime,
-          'photo_url': photoUrl,
-          'live_photo_url': photoUrl,
-          'latitude': finalLat,
-          'longitude': finalLng,
-          'location_name': locationLabel,
-          'created_at': now.toIso8601String(),
-        });
-      } catch (dbErr) {
-        debugPrint('DB attendance insert notice: $dbErr');
-      }
+      // Store the object path, not a permanent public URL. The bucket must be private.
+      await client.from('staff_attendance').insert({
+        'auth_id': authUser.id,
+        'staff_name': widget.staffName,
+        'date': dateStr,
+        'shift_window': _shiftWindow,
+        'check_in_time': now.toIso8601String(),
+        'status': 'present',
+        'is_on_time': isOnTime,
+        'photo_url': fileName,
+        'live_photo_url': fileName,
+        'latitude': finalLat,
+        'longitude': finalLng,
+        'location_name': locationLabel,
+        'created_at': now.toIso8601String(),
+      });
 
       // Persist locally so it NEVER prompts again today on app launch / restart
       try {
-        final authId = client.auth.currentUser?.id ?? widget.staffId;
+        final authId = authUser.id;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(ShiftPrefs.startedDateKey(authId), dateStr);
         await prefs.setString(ShiftPrefs.checkInTimeKey(authId), now.toIso8601String());
@@ -295,6 +287,11 @@ class _ShiftStartDialogState extends State<ShiftStartDialog> {
       }
     } catch (e) {
       debugPrint('Shift start error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not record your shift. Please check your connection and try again.')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }

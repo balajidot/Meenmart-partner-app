@@ -7,7 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/services/haptic_service.dart';
 import '../../core/services/sound_service.dart';
-import '../../core/widgets/optimized_image.dart';
+import '../../core/widgets/secure_staff_image.dart';
 
 class ProfileSetupScreen extends ConsumerStatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -88,7 +88,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         throw Exception('User is not logged in');
       }
 
-      String? uploadedUrl = _avatarUrl;
+      String? uploadedPath = _avatarUrl;
 
       // 1. Upload photo if selected
       if (_imageFile != null) {
@@ -97,9 +97,9 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
           await client.storage.from('staff-checkins').upload(
                 filename,
                 _imageFile!,
-                fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+                fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: false),
               );
-          uploadedUrl = client.storage.from('staff-checkins').getPublicUrl(filename);
+          uploadedPath = filename;
         } catch (storageErr) {
           debugPrint('Storage avatar notice: $storageErr');
         }
@@ -114,8 +114,8 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         'shift_timing': _shiftCtrl.text.trim(),
         'status': 'active',
       };
-      if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
-        updateMap['avatar_url'] = uploadedUrl;
+      if (uploadedPath != null && uploadedPath.isNotEmpty) {
+        updateMap['avatar_url'] = uploadedPath;
       }
 
       final staffProfile = ref.read(authNotifierProvider).staffProfile;
@@ -126,8 +126,8 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       // Strategy A: Update by DB primary key id if available
       if (staffDbId != null) {
         try {
-          await client.from('store_staff').update(updateMap).eq('id', staffDbId);
-          updated = true;
+          final rows = await client.from('store_staff').update(updateMap).eq('id', staffDbId).select('id');
+          updated = rows.isNotEmpty;
         } catch (e) {
           debugPrint('Update by id notice: $e');
         }
@@ -136,8 +136,8 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       // Strategy B: Update by auth_id
       if (!updated) {
         try {
-          await client.from('store_staff').update(updateMap).eq('auth_id', currentUser.id);
-          updated = true;
+          final rows = await client.from('store_staff').update(updateMap).eq('auth_id', currentUser.id).select('id');
+          updated = rows.isNotEmpty;
         } catch (e) {
           debugPrint('Update by auth_id notice: $e');
         }
@@ -147,11 +147,13 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       if (!updated) {
         updateMap['auth_id'] = currentUser.id;
         updateMap['roles'] = staffProfile?['roles'] ?? ['store_manager'];
-        try {
-          await client.from('store_staff').upsert(updateMap, onConflict: 'auth_id');
-        } catch (e) {
-          debugPrint('Upsert notice: $e');
-        }
+        final rows = await client.from('store_staff').upsert(updateMap, onConflict: 'auth_id').select('id');
+        updated = rows.isNotEmpty;
+      }
+
+      // Every strategy wrote nothing — surface it instead of reporting success.
+      if (!updated) {
+        throw StateError('Profile could not be saved. Please try again.');
       }
 
       // Refresh Riverpod auth state immediately
@@ -233,13 +235,11 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                         child: _imageFile != null
                             ? Image.file(_imageFile!, fit: BoxFit.cover)
                             : (_avatarUrl != null && _avatarUrl!.isNotEmpty)
-                                ? OptimizedImage(
-                                    imageUrl: _avatarUrl!,
+                                ? SecureStaffImage(
+                                    objectPath: _avatarUrl,
                                     width: 100,
                                     height: 100,
-                                    fit: BoxFit.cover,
-                                    memCacheWidth: 200,
-                                    memCacheHeight: 200,
+                                    fallback: const Icon(Icons.person_rounded, size: 50, color: Color(0xFF64748B)),
                                   )
                                 : const Icon(Icons.person_rounded, size: 50, color: Color(0xFF64748B)),
                       ),

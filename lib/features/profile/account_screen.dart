@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/services/haptic_service.dart';
-import '../../core/widgets/optimized_image.dart';
+import '../../core/widgets/secure_staff_image.dart';
 import '../drawer/partner_drawer.dart';
 
 class AccountScreen extends ConsumerWidget {
@@ -93,13 +93,12 @@ class AccountScreen extends ConsumerWidget {
                         ),
                         child: ClipOval(
                           child: (avatarUrl != null && avatarUrl.isNotEmpty)
-                              ? OptimizedImage(
-                                  imageUrl: avatarUrl,
+                              ? SecureStaffImage(
+                                  objectPath: avatarUrl,
                                   width: 80,
                                   height: 80,
                                   fit: BoxFit.cover,
-                                  memCacheWidth: 180,
-                                  memCacheHeight: 180,
+                                  fallback: const Icon(Icons.person_rounded, size: 48, color: Color(0xFF64748B)),
                                 )
                               : const Icon(Icons.person_rounded, size: 48, color: Color(0xFF64748B)),
                         ),

@@ -149,6 +149,15 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       }
     } catch (_) {}
 
+    if (lat == null || lng == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Live GPS location is required to clock in. Please enable location and try again.')),
+        );
+      }
+      return;
+    }
+
     File? selfie;
     try {
       final photo = await _picker.pickImage(

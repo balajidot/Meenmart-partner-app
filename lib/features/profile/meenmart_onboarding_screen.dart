@@ -115,16 +115,16 @@ class _MeenMartOnboardingScreenState extends ConsumerState<MeenMartOnboardingScr
       final userId = client.auth.currentUser?.id;
 
       if (userId != null) {
-        String? selfieUrl;
+        String? selfiePath;
         if (_selfieFile != null) {
           final filename = 'onboarding_${userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
           try {
             await client.storage.from('staff-checkins').upload(
                   filename,
                   _selfieFile!,
-                  fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+                  fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: false),
                 );
-            selfieUrl = client.storage.from('staff-checkins').getPublicUrl(filename);
+            selfiePath = filename;
           } catch (stErr) {
             debugPrint('Storage notice: $stErr');
           }
@@ -142,11 +142,12 @@ class _MeenMartOnboardingScreenState extends ConsumerState<MeenMartOnboardingScr
           'status': 'active',
         };
 
-        if (selfieUrl != null) {
-          updateData['avatar_url'] = selfieUrl;
+        if (selfiePath != null) {
+          updateData['avatar_url'] = selfiePath;
         }
 
-        await client.from('store_staff').update(updateData).eq('auth_id', userId);
+        final rows = await client.from('store_staff').update(updateData).eq('auth_id', userId).select('id');
+        if (rows.isEmpty) throw StateError('Profile could not be saved.');
         await ref.read(authNotifierProvider.notifier).refreshProfile();
       }
 

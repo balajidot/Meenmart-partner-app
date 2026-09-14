@@ -32,9 +32,7 @@ void main() {
     };
 
     // Custom ErrorWidget.builder for widget rendering failures (renders safely within element tree)
-    ErrorWidget.builder = (FlutterErrorDetails details) {
-      return _buildErrorCard(details.exceptionAsString(), details.stack.toString());
-    };
+    ErrorWidget.builder = (_) => _buildErrorCard();
 
     // Load environment configurations from .env
     await EnvConfig.initialize();
@@ -71,7 +69,7 @@ void main() {
   });
 }
 
-Widget _buildErrorCard(String errorMsg, String stackTrace) {
+Widget _buildErrorCard() {
   return Material(
     color: const Color(0xFFFEF2F2),
     child: SafeArea(
@@ -83,42 +81,14 @@ Widget _buildErrorCard(String errorMsg, String stackTrace) {
             const Icon(Icons.bug_report_rounded, color: AppColors.danger, size: 56),
             const SizedBox(height: 12),
             Text(
-              'CRASH DIAGNOSTIC DETECTED',
+              'Something went wrong',
               style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.navyBlue, letterSpacing: 0.5),
             ),
             const SizedBox(height: 4),
             Text(
-              'Exact Error Root Cause:',
-              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.danger),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: 280),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      errorMsg,
-                      style: GoogleFonts.firaCode(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppColors.danger),
-                    ),
-                    if (stackTrace.isNotEmpty) ...[
-                      const Divider(height: 16),
-                      Text(
-                        stackTrace,
-                        style: GoogleFonts.firaCode(fontSize: 9.5, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+              'Please try again. If the issue continues, contact support.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
             ),
             const SizedBox(height: 18),
             ElevatedButton.icon(

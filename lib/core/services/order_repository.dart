@@ -14,6 +14,9 @@ class OrderRepository {
 
   List<Map<String, dynamic>> get cachedDeliveryPartners => _cachedDeliveryPartners;
 
+  /// Drops cached rows so a new session never sees the previous user's data.
+  void clearCache() => _cachedDeliveryPartners = [];
+
   Future<List<Map<String, dynamic>>> fetchDeliveryPartners({bool forceRefresh = false}) async {
     if (!forceRefresh && _cachedDeliveryPartners.isNotEmpty) {
       return _cachedDeliveryPartners;
@@ -31,36 +34,10 @@ class OrderRepository {
       debugPrint('Delivery partners fetch warning: $e');
     }
 
-    if (results.isEmpty) {
-      try {
-        final staffRows = await _db
-            .from('store_staff')
-            .select('*')
-            .order('name', ascending: true);
-        final filtered = staffRows.where((s) {
-          final roles = (s['roles'] as List?) ?? [];
-          final roleStr = s['role']?.toString() ?? '';
-          return roles.contains('delivery_partner') ||
-              roles.contains('delivery') ||
-              roleStr.contains('delivery');
-        }).map((s) => {
-          'id': s['id'] ?? 1,
-          'name': s['name'] ?? 'Delivery Partner',
-          'phone': s['phone'] ?? '',
-          'vehicle_number': s['vehicle_number'] ?? s['vehicle'] ?? 'TN18-BIKE',
-          'is_active': s['status'] == 'active' || s['status'] == null,
-          'status': s['status'] ?? 'Available',
-        }).toList();
-
-        if (filtered.isNotEmpty) {
-          results = List<Map<String, dynamic>>.from(filtered);
-        }
-      } catch (staffErr) {
-        debugPrint('store_staff delivery partners fallback notice: $staffErr');
-      }
-    }
-
-    // No hardcoded fallback — return empty list so UI shows "No delivery partners found" state
+    // `delivery_partners` is the only source of truth here: the id is passed
+    // straight to assign_and_dispatch_order, which looks it up in that table.
+    // Deriving ids from store_staff would dispatch to the wrong partner.
+    // An empty list lets the UI show its "No delivery partners found" state.
 
     _cachedDeliveryPartners = results;
     return _cachedDeliveryPartners;
@@ -186,46 +163,15 @@ class OrderRepository {
     Map<String, dynamic>? extraData,
   }) async {
     try {
-      final result = await _db.rpc('advance_store_order', params: {
+      await _db.rpc('advance_store_order', params: {
         'p_order_id': orderId,
         'p_new_status': newStatusCode,
         'p_reason': reason,
         'p_packed_photo_url': extraData?['packed_photo_url'],
       });
-      if (result != null) return true;
-    } catch (e) {
-      debugPrint('advance_store_order RPC notice: $e, applying direct status fallback');
-    }
-
-    // Direct fallback for resilience to ensure operations are never blocked
-    try {
-      final now = DateTime.now().toIso8601String();
-      final updateData = <String, dynamic>{
-        'status': newStatusCode,
-        'updated_at': now,
-        if (newStatusCode == 'packed') ...{
-          'packed_at': now,
-          'status_message': 'Order packed with thermal cooling packs & freshness seal.',
-        },
-        if (newStatusCode == 'out_for_delivery') ...{
-          'shipped_at': now,
-          'status_message': 'Delivery partner dispatched and on the way.',
-        },
-        if (newStatusCode == 'delivered' || newStatusCode == 'completed') ...{
-          'delivered_at': now,
-          'status_message': 'Order delivered fresh to customer.',
-        },
-        if (newStatusCode == 'cancelled') ...{
-          'cancelled_at': now,
-          if (reason != null) 'cancel_reason': reason,
-          if (reason != null) 'status_message': reason,
-        },
-        if (extraData != null) ...extraData,
-      };
-      await _db.from('orders').update(updateData).eq('id', orderId);
       return true;
-    } catch (directErr) {
-      debugPrint('Direct order status update fallback error: $directErr');
+    } catch (e) {
+      debugPrint('advance_store_order RPC failed: $e');
       return false;
     }
   }
@@ -366,26 +312,13 @@ class OrderRepository {
   /// Assigns delivery partner to order
   Future<bool> assignDeliveryPartner(dynamic orderId, int partnerId) async {
     try {
-      final result = await _db.rpc('assign_and_dispatch_order', params: {
+      await _db.rpc('assign_and_dispatch_order', params: {
         'p_order_id': orderId,
         'p_partner_id': partnerId,
       });
-      if (result != null) return true;
-    } catch (e) {
-      debugPrint('Delivery partner assignment RPC notice: $e, applying direct fallback');
-    }
-
-    try {
-      final now = DateTime.now().toIso8601String();
-      await _db.from('orders').update({
-        'delivery_partner_id': partnerId,
-        'status': 'out_for_delivery',
-        'shipped_at': now,
-        'updated_at': now,
-      }).eq('id', orderId);
       return true;
-    } catch (directErr) {
-      debugPrint('Direct delivery partner assignment fallback error: $directErr');
+    } catch (e) {
+      debugPrint('Delivery partner assignment RPC failed: $e');
       return false;
     }
   }

@@ -15,6 +15,12 @@ class InventoryRepository {
   List<String> get cachedCategories => _cachedCategories;
   List<Map<String, dynamic>> get cachedInventory => _cachedInventory;
 
+  /// Drops cached rows so a new session never sees the previous user's data.
+  void clearCache() {
+    _cachedCategories = [];
+    _cachedInventory = [];
+  }
+
   Future<List<String>> fetchCategories({bool forceRefresh = false}) async {
     if (!forceRefresh && _cachedCategories.isNotEmpty) {
       return _cachedCategories;

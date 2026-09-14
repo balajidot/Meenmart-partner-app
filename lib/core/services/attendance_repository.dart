@@ -270,44 +270,38 @@ class AttendanceRepository {
     double? longitude,
     String? locationLabel,
   }) async {
+    if (selfiePhoto == null) throw ArgumentError('A live selfie is required to clock in.');
+    if (latitude == null || longitude == null) {
+      throw ArgumentError('A live GPS location is required to clock in.');
+    }
     final now = DateTime.now();
     final dateStr = DateFormat('yyyy-MM-dd').format(now);
     final isOnTime = now.hour < 7 || (now.hour == 7 && now.minute <= 15);
-    final finalLat = latitude ?? 13.4188;
-    final finalLng = longitude ?? 80.3192;
+    final finalLat = latitude;
+    final finalLng = longitude;
     final finalLoc = locationLabel ?? 'Pazhaverkadu Hub (${finalLat.toStringAsFixed(3)}°N, ${finalLng.toStringAsFixed(3)}°E)';
 
-    String? photoUrl;
-    if (selfiePhoto != null) {
-      try {
-        final cleanId = userId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-        final fileName = 'punch_in_${cleanId}_${now.millisecondsSinceEpoch}.jpg';
-        final bytes = await selfiePhoto.readAsBytes();
-        var uploadBytes = bytes;
+    final cleanId = userId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final fileName = 'punch_in_${cleanId}_${now.millisecondsSinceEpoch}.jpg';
+    final bytes = await selfiePhoto.readAsBytes();
+    var uploadBytes = bytes;
 
-        try {
-          final compressed = await FlutterImageCompress.compressWithList(
-            bytes,
-            minWidth: 700,
-            minHeight: 700,
-            quality: 60,
-            format: CompressFormat.jpeg,
-          );
-          if (compressed.isNotEmpty) {
-            uploadBytes = Uint8List.fromList(compressed);
-          }
-        } catch (_) {}
+    try {
+      final compressed = await FlutterImageCompress.compressWithList(
+        bytes,
+        minWidth: 700,
+        minHeight: 700,
+        quality: 60,
+        format: CompressFormat.jpeg,
+      );
+      if (compressed.isNotEmpty) uploadBytes = Uint8List.fromList(compressed);
+    } catch (_) {}
 
-        await _client.storage.from('staff-checkins').uploadBinary(
-          fileName,
-          uploadBytes,
-          fileOptions: const FileOptions(contentType: 'image/jpeg', cacheControl: '3600', upsert: true),
-        );
-        photoUrl = _client.storage.from('staff-checkins').getPublicUrl(fileName);
-      } catch (e) {
-        debugPrint('Storage punch upload notice: $e');
-      }
-    }
+    await _client.storage.from('staff-checkins').uploadBinary(
+      fileName,
+      uploadBytes,
+      fileOptions: const FileOptions(contentType: 'image/jpeg', cacheControl: '3600', upsert: false),
+    );
 
     final nowTimeFmt = DateFormat('hh:mm a').format(now);
 
@@ -333,51 +327,53 @@ class AttendanceRepository {
       'check_in_time': now.toIso8601String(),
       'status': isOnTime ? 'ON TIME' : 'PRESENT',
       'is_on_time': isOnTime,
-      'photo_url': photoUrl,
-      'live_photo_url': photoUrl,
+      'photo_url': fileName,
+      'live_photo_url': fileName,
       'latitude': finalLat,
       'longitude': finalLng,
       'location_name': finalLoc,
       'created_at': now.toIso8601String(),
     };
 
-    String generatedId = 'att_${now.millisecondsSinceEpoch}';
     try {
       final res = await _client.from('staff_attendance').insert(payload).select().maybeSingle();
-      if (res != null && res['id'] != null) {
-        generatedId = res['id'].toString();
-      }
+      if (res == null || res['id'] == null) throw StateError('Attendance was not saved.');
+      final generatedId = res['id'].toString();
 
+      try {
       await _client.from('manager_activity_logs').insert({
         'staff_name': staffName,
         'event_type': 'shift_start',
         'description': 'Morning shift attendance clocked in ($nowTimeFmt)',
-        'photo_url': photoUrl,
+        'photo_url': fileName,
         'location_lat': finalLat,
         'location_lng': finalLng,
       });
+      } catch (e) {
+        debugPrint('Activity log notice: $e');
+      }
+
+      final record = AttendanceRecord(
+        id: generatedId,
+        authId: userId,
+        staffName: staffName,
+        date: dateStr,
+        checkInDateTime: now,
+        checkInTimeFormatted: nowTimeFmt,
+        status: isOnTime ? 'ON TIME' : 'PRESENT',
+        isOnTime: isOnTime,
+        photoUrl: fileName,
+        latitude: finalLat,
+        longitude: finalLng,
+        locationName: finalLoc,
+        shiftWindow: '07:00 AM - 05:00 PM',
+      );
+      await _saveTodayCache(userId, record);
+      return record;
     } catch (e) {
-      debugPrint('Supabase punch in DB notice: $e');
+      debugPrint('Supabase punch in failed: $e');
+      rethrow;
     }
-
-    final record = AttendanceRecord(
-      id: generatedId,
-      authId: userId,
-      staffName: staffName,
-      date: dateStr,
-      checkInDateTime: now,
-      checkInTimeFormatted: nowTimeFmt,
-      status: isOnTime ? 'ON TIME' : 'PRESENT',
-      isOnTime: isOnTime,
-      photoUrl: photoUrl,
-      latitude: finalLat,
-      longitude: finalLng,
-      locationName: finalLoc,
-      shiftWindow: '07:00 AM - 05:00 PM',
-    );
-
-    await _saveTodayCache(userId, record);
-    return record;
   }
 
   // Punch Out
@@ -416,8 +412,8 @@ class AttendanceRepository {
         'staff_name': staffName,
         'event_type': 'shift_end',
         'description': 'Shift completed - Punch Out ($nowTimeFmt, Working Hours: $durationStr)',
-        'location_lat': latitude ?? 13.4188,
-        'location_lng': longitude ?? 80.3192,
+        'location_lat': latitude,
+        'location_lng': longitude,
       });
     } catch (e) {
       debugPrint('Supabase punch out DB notice: $e');
