@@ -112,7 +112,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         'upi_id': _upiCtrl.text.trim(),
         'vehicle_number': _vehicleCtrl.text.trim(),
         'shift_timing': _shiftCtrl.text.trim(),
-        'status': 'active',
+        // roles / status are admin-controlled (enforced by a DB trigger).
       };
       if (uploadedPath != null && uploadedPath.isNotEmpty) {
         updateMap['avatar_url'] = uploadedPath;
@@ -143,13 +143,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         }
       }
 
-      // Strategy C: Upsert row by auth_id if new
-      if (!updated) {
-        updateMap['auth_id'] = currentUser.id;
-        updateMap['roles'] = staffProfile?['roles'] ?? ['store_manager'];
-        final rows = await client.from('store_staff').upsert(updateMap, onConflict: 'auth_id').select('id');
-        updated = rows.isNotEmpty;
-      }
+      // No self-created staff rows: an administrator must provision the account.
 
       // Every strategy wrote nothing — surface it instead of reporting success.
       if (!updated) {

@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/inventory_repository.dart';
 import '../services/order_repository.dart';
 import '../services/notification_service.dart';
+import '../services/delivery_tracking_service.dart';
 import '../widgets/secure_staff_image.dart';
 
 class AuthState {
@@ -38,6 +39,8 @@ class AuthNotifier extends Notifier<AuthState> {
       if (event == AuthChangeEvent.signedIn) {
         await refreshProfile();
       } else if (event == AuthChangeEvent.signedOut) {
+        // Stop live GPS so a signed-out phone never keeps broadcasting.
+        unawaited(DeliveryTrackingService.instance.stopTracking());
         clearSecureStaffImageCache();
         OrderRepository().clearCache();
         InventoryRepository().clearCache();
@@ -84,7 +87,21 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> signOut() async {
+    // Mark the rider offline while the session is still valid (RLS needs it).
+    await _setDeliveryOffline();
+    await DeliveryTrackingService.instance.stopTracking();
     await AuthService().signOut();
+  }
+
+  Future<void> _setDeliveryOffline() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await Supabase.instance.client
+          .from('delivery_partners')
+          .update({'duty_status': 'offline', 'is_available': false})
+          .eq('user_id', uid);
+    } catch (_) {}
   }
 }
 

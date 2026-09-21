@@ -66,6 +66,8 @@ class AuthService {
   Future<void> signOut() async {
     try {
       await _supabase.auth.signOut();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Sign out error: $e');
+    }
   }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -824,7 +823,9 @@ class _WeightConfirmationDialogState extends State<WeightConfirmationDialog> {
         if (compressed.isNotEmpty) {
           uploadBytes = Uint8List.fromList(compressed);
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Weight scale photo compression warning: $e');
+      }
 
       final db = Supabase.instance.client;
       await db.storage.from('fish-images').uploadBinary(

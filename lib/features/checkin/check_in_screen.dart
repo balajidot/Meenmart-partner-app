@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -27,6 +28,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   bool _isLoading = true;
   bool _isPunching = false;
+  bool _isCameraActive = false; // Mutex to prevent duplicate ImagePicker triggers
 
   AttendanceRecord? _todayRecord;
   List<AttendanceRecord> _historyRecords = [];
@@ -110,10 +112,19 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
   }
 
   String _calculateLiveWorkingDuration() {
-    if (_todayRecord == null || _todayRecord!.checkInDateTime == null) {
+    if (_todayRecord == null) {
       return '0h 00m';
     }
-    final inTime = _todayRecord!.checkInDateTime!;
+    DateTime? inTime = _todayRecord!.checkInDateTime;
+    if (inTime == null) {
+      try {
+        final parsed = DateFormat('hh:mm a').parse(_todayRecord!.checkInTimeFormatted);
+        final now = DateTime.now();
+        inTime = DateTime(now.year, now.month, now.day, parsed.hour, parsed.minute);
+      } catch (_) {}
+    }
+    if (inTime == null) return '0h 00m';
+
     final outTime = _todayRecord!.checkOutDateTime ?? _currentTime;
     final diff = outTime.difference(inTime);
     if (diff.isNegative) return '0h 00m';
@@ -128,68 +139,101 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
 
   // 1. CLOCK IN
   Future<void> _startPunchInFlow() async {
+    if (_isPunching || _isCameraActive) return;
     AppHaptics.selectionClick();
 
-    double? lat;
-    double? lng;
+    // Lock button immediately to prevent double-tap race conditions
+    setState(() => _isPunching = true);
+
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (serviceEnabled) {
-        LocationPermission permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          permission = await Geolocator.requestPermission();
+      double? lat;
+      double? lng;
+      try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (serviceEnabled) {
+          LocationPermission permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+          if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+            final pos = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 5)),
+            );
+            lat = pos.latitude;
+            lng = pos.longitude;
+          }
         }
-        if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
-          final pos = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 5)),
+      } catch (e) {
+        debugPrint('GPS check-in position warning: $e');
+      }
+
+      if (lat == null || lng == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.location_off_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Live GPS location is required to clock in. Please enable location services.',
+                      style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFDC2626),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
           );
-          lat = pos.latitude;
-          lng = pos.longitude;
         }
-      }
-    } catch (_) {}
-
-    if (lat == null || lng == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Live GPS location is required to clock in. Please enable location and try again.')),
-        );
-      }
-      return;
-    }
-
-    File? selfie;
-    try {
-      final photo = await _picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.front,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 65,
-      );
-      if (photo != null) {
-        selfie = File(photo.path);
-      } else {
         return;
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Camera Access Error: $e'),
-            behavior: SnackBarBehavior.floating,
-          ),
+
+      File? selfie;
+      _isCameraActive = true;
+      try {
+        final photo = await _picker.pickImage(
+          source: ImageSource.camera,
+          preferredCameraDevice: CameraDevice.front,
+          maxWidth: 800,
+          maxHeight: 800,
+          imageQuality: 65,
         );
+        if (photo != null) {
+          selfie = File(photo.path);
+        } else {
+          // User closed or cancelled camera capture
+          return;
+        }
+      } on PlatformException catch (pe) {
+        if (pe.code == 'already_active') {
+          debugPrint('Camera picker already active, ignoring parallel trigger.');
+          return;
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Camera access error: ${pe.message ?? pe.code}'),
+              backgroundColor: const Color(0xFFDC2626),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+        return;
+      } catch (e) {
+        debugPrint('Camera error: $e');
+        return;
+      } finally {
+        _isCameraActive = false;
       }
-      return;
-    }
 
-    if (!mounted) return;
+      if (!mounted) return;
+      AppHaptics.mediumImpact();
 
-    setState(() => _isPunching = true);
-    AppHaptics.mediumImpact();
-
-    try {
       final authState = ref.read(authNotifierProvider);
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId == null) throw StateError('Your session has expired. Please sign in again.');
@@ -210,7 +254,6 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       if (mounted) {
         setState(() {
           _todayRecord = record;
-          _isPunching = false;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -237,15 +280,20 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isPunching = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to clock in: $e'),
             backgroundColor: const Color(0xFFDC2626),
             behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() => _isPunching = false);
+      }
+      _isCameraActive = false;
     }
   }
 
@@ -468,10 +516,38 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                 borderRadius: BorderRadius.circular(14),
                 child: record.photoUrl != null && record.photoUrl!.isNotEmpty
                     ? OptimizedImage(
-                        imageUrl: record.photoUrl!,
+                        imageUrl: AttendanceRecord.resolvePhotoUrl(record.photoUrl),
                         width: 260,
                         height: 260,
                         fit: BoxFit.cover,
+                        placeholder: Container(
+                          width: 260,
+                          height: 260,
+                          color: const Color(0xFFF1F5F9),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF059669)),
+                            ),
+                          ),
+                        ),
+                        errorWidget: Container(
+                          width: 260,
+                          height: 220,
+                          color: const Color(0xFFF1F5F9),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.account_circle_rounded, size: 54, color: Color(0xFF059669)),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Attendance Selfie Verified',
+                                style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF475569)),
+                              ),
+                            ],
+                          ),
+                        ),
                       )
                     : Container(
                         width: 260,
@@ -625,68 +701,137 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
         children: [
           // Header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
-              color: Color(0xFF0F172A),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+              ),
               borderRadius: BorderRadius.vertical(top: Radius.circular(19)),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: statusBgColor,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(statusIcon, size: 10, color: statusTextColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              statusLabel,
-                              style: GoogleFonts.plusJakartaSans(fontSize: 10, fontWeight: FontWeight.w800, color: statusTextColor),
+                // Top Row: Status badge & Clock
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusBgColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(statusIcon, size: 10, color: statusTextColor),
+                          const SizedBox(width: 5),
+                          Text(
+                            statusLabel,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: statusTextColor,
+                              letterSpacing: 0.3,
                             ),
-                          ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            dateStr.split(',').first,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10.5,
+                              color: const Color(0xFF34D399),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(width: 3, height: 3, decoration: const BoxDecoration(color: Colors.white38, shape: BoxShape.circle)),
+                          const SizedBox(width: 6),
+                          Text(
+                            timeStr,
+                            style: GoogleFonts.firaCode(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                // Staff info row
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF059669), Color(0xFF10B981)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF059669).withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          staffName.isNotEmpty ? staffName.substring(0, 1).toUpperCase() : 'S',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        staffName,
-                        style: GoogleFonts.plusJakartaSans(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            staffName,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Store Partner • 07:00 AM – 05:00 PM',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11.5,
+                              color: const Color(0xFF94A3B8),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        'Shift: 07:00 AM – 05:00 PM',
-                        style: GoogleFonts.plusJakartaSans(fontSize: 11, color: Colors.white70),
-                      ),
-                    ],
-                  ),
-                ),
-                // Clock
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white24),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        timeStr,
-                        style: GoogleFonts.firaCode(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
-                      ),
-                      Text(
-                        dateStr.split(',').first,
-                        style: GoogleFonts.plusJakartaSans(fontSize: 10, color: const Color(0xFF34D399), fontWeight: FontWeight.w700),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -759,53 +904,89 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                 if (_todayRecord != null) ...[
                   const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
                     child: Row(
                       children: [
-                        if (_todayRecord?.photoUrl != null) ...[
-                          GestureDetector(
-                            onTap: () => _showSelfieModal(_todayRecord!),
+                        GestureDetector(
+                          onTap: _todayRecord?.photoUrl != null && _todayRecord!.photoUrl!.isNotEmpty
+                              ? () => _showSelfieModal(_todayRecord!)
+                              : null,
+                          child: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: OptimizedImage(
-                                imageUrl: _todayRecord!.photoUrl!,
-                                width: 32,
-                                height: 32,
-                                fit: BoxFit.cover,
-                              ),
+                              borderRadius: BorderRadius.circular(7),
+                              child: _todayRecord?.photoUrl != null && _todayRecord!.photoUrl!.isNotEmpty
+                                  ? OptimizedImage(
+                                      imageUrl: AttendanceRecord.resolvePhotoUrl(_todayRecord!.photoUrl),
+                                      width: 38,
+                                      height: 38,
+                                      fit: BoxFit.cover,
+                                      placeholder: Container(
+                                        color: const Color(0xFFF1F5F9),
+                                        child: const Center(
+                                          child: SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF059669)),
+                                          ),
+                                        ),
+                                      ),
+                                      errorWidget: Container(
+                                        color: const Color(0xFFECFDF5),
+                                        child: const Icon(Icons.person_rounded, size: 22, color: Color(0xFF059669)),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: const Color(0xFFECFDF5),
+                                      child: const Icon(Icons.person_rounded, size: 22, color: Color(0xFF059669)),
+                                    ),
                             ),
                           ),
-                          const SizedBox(width: 10),
-                        ],
+                        ),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'Pazhaverkadu Store Hub',
-                                style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B)),
+                                style: GoogleFonts.plusJakartaSans(fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
                               ),
-                              Text(
-                                'GPS Location Verified',
-                                style: GoogleFonts.plusJakartaSans(fontSize: 10.5, color: const Color(0xFF64748B)),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  const Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF059669)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'GPS Location Verified',
+                                    style: GoogleFonts.plusJakartaSans(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
                         ),
-                        if (_todayRecord?.photoUrl != null)
+                        if (_todayRecord?.photoUrl != null && _todayRecord!.photoUrl!.isNotEmpty)
                           TextButton(
                             onPressed: () => _showSelfieModal(_todayRecord!),
                             style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              backgroundColor: const Color(0xFFECFDF5),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
-                            child: Text('View Photo', style: GoogleFonts.plusJakartaSans(fontSize: 11.5, fontWeight: FontWeight.w700, color: const Color(0xFF059669))),
+                            child: Text('View Photo', style: GoogleFonts.plusJakartaSans(fontSize: 11.5, fontWeight: FontWeight.w800, color: const Color(0xFF059669))),
                           ),
                       ],
                     ),
@@ -869,8 +1050,26 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     if (_isPunching) {
       return Container(
         height: 48,
-        decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(12)),
-        child: const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF059669)))),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.2, color: Color(0xFF059669)),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Processing Attendance...',
+              style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF475569)),
+            ),
+          ],
+        ),
       );
     }
 
@@ -949,7 +1148,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
             Expanded(
               child: _buildSummaryCard(
                 title: 'Days Present',
-                value: '${_stats.daysPresent} Days',
+                value: '${_stats.daysPresent} ${_stats.daysPresent == 1 ? 'Day' : 'Days'}',
                 icon: Icons.calendar_today_rounded,
                 color: const Color(0xFF059669),
               ),
@@ -1030,7 +1229,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                '${_filteredHistory.length} Records',
+                '${_filteredHistory.length} ${_filteredHistory.length == 1 ? 'Record' : 'Records'}',
                 style: GoogleFonts.plusJakartaSans(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF4B5563)),
               ),
             ),
@@ -1251,10 +1450,24 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(7),
                         child: OptimizedImage(
-                          imageUrl: record.photoUrl!,
+                          imageUrl: AttendanceRecord.resolvePhotoUrl(record.photoUrl),
                           fit: BoxFit.cover,
                           memCacheWidth: 90,
                           memCacheHeight: 90,
+                          placeholder: Container(
+                            color: const Color(0xFFF1F5F9),
+                            child: const Center(
+                              child: SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF059669)),
+                              ),
+                            ),
+                          ),
+                          errorWidget: Container(
+                            color: const Color(0xFFECFDF5),
+                            child: const Icon(Icons.person_rounded, size: 20, color: Color(0xFF059669)),
+                          ),
                         ),
                       ),
                     ),

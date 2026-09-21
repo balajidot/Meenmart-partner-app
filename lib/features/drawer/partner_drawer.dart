@@ -7,6 +7,7 @@ import '../../core/services/haptic_service.dart';
 import '../../core/services/app_update_service.dart';
 import '../../core/widgets/secure_staff_image.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/providers/order_providers.dart';
 
 class PartnerDrawer extends ConsumerWidget {
   const PartnerDrawer({super.key});
@@ -14,6 +15,7 @@ class PartnerDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authNotifierProvider);
+    final unreadOrders = ref.watch(ordersNotifierProvider.select((s) => s.unreadNotificationCount));
     final profile = authState.staffProfile;
     final roles = List<String>.from(profile?['roles'] ?? []);
 
@@ -201,6 +203,7 @@ class PartnerDrawer extends ConsumerWidget {
                       route: '/store-dashboard',
                       isSelected: currentRoute == '/store-dashboard' || currentRoute.isEmpty || currentRoute == '/',
                       color: const Color(0xFF059669),
+                      badgeCount: unreadOrders,
                     ),
                     const SizedBox(height: 6),
                     _buildNavItem(
@@ -390,6 +393,7 @@ class PartnerDrawer extends ConsumerWidget {
     required String route,
     required bool isSelected,
     required Color color,
+    int? badgeCount,
     VoidCallback? onCustomTap,
   }) {
     return Material(
@@ -443,6 +447,30 @@ class PartnerDrawer extends ConsumerWidget {
                   ),
                 ),
               ),
+              if (badgeCount != null && badgeCount > 0)
+                Container(
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    badgeCount > 99 ? '99+' : '$badgeCount',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               if (isSelected)
                 Container(
                   width: 6,

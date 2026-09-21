@@ -54,6 +54,28 @@ class AttendanceRecord {
 
   bool get isPunchedOut => checkOutDateTime != null || checkOutTimeFormatted != null;
 
+  static DateTime? _parseDateTime(dynamic raw) {
+    if (raw == null) return null;
+    final str = raw.toString().trim();
+    if (str.isEmpty) return null;
+    final iso = str.contains(' ') && !str.contains('T') ? str.replaceFirst(' ', 'T') : str;
+    return DateTime.tryParse(iso)?.toLocal();
+  }
+
+  static String? resolvePhotoUrl(dynamic raw) {
+    if (raw == null) return null;
+    final str = raw.toString().trim();
+    if (str.isEmpty) return null;
+    if (str.startsWith('http://') || str.startsWith('https://')) {
+      return str;
+    }
+    try {
+      return Supabase.instance.client.storage.from('staff-checkins').getPublicUrl(str);
+    } catch (_) {
+      return str;
+    }
+  }
+
   factory AttendanceRecord.fromMap(Map<String, dynamic> map) {
     DateTime? inDt;
     DateTime? outDt;
@@ -62,36 +84,31 @@ class AttendanceRecord {
 
     final inRaw = map['check_in_time']?.toString() ?? map['created_at']?.toString();
     if (inRaw != null) {
-      try {
-        final parsed = DateTime.tryParse(inRaw);
-        if (parsed != null) {
-          inDt = parsed.toLocal();
-          inFmt = DateFormat('hh:mm a').format(inDt);
-        } else {
-          inFmt = inRaw;
-        }
-      } catch (_) {
+      final parsed = _parseDateTime(inRaw);
+      if (parsed != null) {
+        inDt = parsed;
+        inFmt = DateFormat('hh:mm a').format(inDt);
+      } else {
         inFmt = inRaw;
       }
     }
 
     final outRaw = map['check_out_time']?.toString();
     if (outRaw != null && outRaw.isNotEmpty) {
-      try {
-        final parsed = DateTime.tryParse(outRaw);
-        if (parsed != null) {
-          outDt = parsed.toLocal();
-          outFmt = DateFormat('hh:mm a').format(outDt);
-        } else {
-          outFmt = outRaw;
-        }
-      } catch (_) {
+      final parsed = _parseDateTime(outRaw);
+      if (parsed != null) {
+        outDt = parsed;
+        outFmt = DateFormat('hh:mm a').format(outDt);
+      } else {
         outFmt = outRaw;
       }
     }
 
     final createdAtStr = map['created_at']?.toString() ?? DateTime.now().toIso8601String();
     final dateVal = map['date']?.toString() ?? (createdAtStr.length >= 10 ? createdAtStr.substring(0, 10) : DateFormat('yyyy-MM-dd').format(DateTime.now()));
+
+    final rawPhoto = map['photo_url']?.toString() ?? map['live_photo_url']?.toString();
+    final resolvedPhotoUrl = resolvePhotoUrl(rawPhoto);
 
     return AttendanceRecord(
       id: map['id']?.toString() ?? 'att_${DateTime.now().millisecondsSinceEpoch}',
@@ -104,7 +121,7 @@ class AttendanceRecord {
       checkOutTimeFormatted: outFmt,
       status: (map['status']?.toString() ?? 'present').toUpperCase(),
       isOnTime: map['is_on_time'] == true || (map['status']?.toString().toLowerCase() == 'on time'),
-      photoUrl: map['photo_url']?.toString() ?? map['live_photo_url']?.toString(),
+      photoUrl: resolvedPhotoUrl,
       latitude: (map['latitude'] as num?)?.toDouble(),
       longitude: (map['longitude'] as num?)?.toDouble(),
       locationName: map['location_name']?.toString() ?? 'Pazhaverkadu Hub',
@@ -295,7 +312,9 @@ class AttendanceRepository {
         format: CompressFormat.jpeg,
       );
       if (compressed.isNotEmpty) uploadBytes = Uint8List.fromList(compressed);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Check-in image compression warning: $e');
+    }
 
     await _client.storage.from('staff-checkins').uploadBinary(
       fileName,
@@ -316,11 +335,13 @@ class AttendanceRepository {
       if (staffRow != null && staffRow['id'] != null) {
         resolvedStaffId = staffRow['id'].toString();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Resolve staff id warning: $e');
+    }
 
     final payload = {
       'auth_id': userId,
-      if (resolvedStaffId != null) 'staff_id': resolvedStaffId,
+      'staff_id': ?resolvedStaffId,
       'staff_name': staffName,
       'date': dateStr,
       'shift_window': '07:00 AM - 05:00 PM',
@@ -362,7 +383,7 @@ class AttendanceRepository {
         checkInTimeFormatted: nowTimeFmt,
         status: isOnTime ? 'ON TIME' : 'PRESENT',
         isOnTime: isOnTime,
-        photoUrl: fileName,
+        photoUrl: AttendanceRecord.resolvePhotoUrl(fileName),
         latitude: finalLat,
         longitude: finalLng,
         locationName: finalLoc,

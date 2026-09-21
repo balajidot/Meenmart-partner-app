@@ -22,23 +22,20 @@ class _PartnerLoginScreenState extends ConsumerState<PartnerLoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
 
-  String _selectedRole = 'store_manager';
   final SoundService _soundService = SoundService();
+
+  // Premium Dark Navy Theme Palette
+  static const Color _navyBgStart = Color(0xFF0A1128);
+  static const Color _navyBgMid = Color(0xFF0E1A38);
+  static const Color _navyBgEnd = Color(0xFF162544);
+  static const Color _brandEmerald = Color(0xFF059669);
+  static const Color _brandEmeraldLight = Color(0xFF10B981);
 
   @override
   void dispose() {
     _userIdCtrl.dispose();
     _passwordCtrl.dispose();
     super.dispose();
-  }
-
-  void _selectRolePreset(String role, String userId) {
-    AppHaptics.selectionClick();
-    setState(() {
-      _selectedRole = role;
-      _userIdCtrl.text = userId;
-      _errorMessage = null;
-    });
   }
 
   Future<void> _handleLogin() async {
@@ -88,6 +85,7 @@ class _PartnerLoginScreenState extends ConsumerState<PartnerLoginScreen> {
         await NotificationService().init();
       } catch (_) {}
 
+      // Refresh and fetch staff profile with roles from database
       await ref.read(authNotifierProvider.notifier).refreshProfile();
       final authState = ref.read(authNotifierProvider);
       final roles = authState.staffProfile?['roles'] as List<dynamic>? ?? [];
@@ -96,6 +94,10 @@ class _PartnerLoginScreenState extends ConsumerState<PartnerLoginScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
 
+      // AUTOMATIC ROLE-BASED ROUTING:
+      // 1. Delivery Partner -> /delivery-dashboard
+      // 2. Marketing Executive -> /marketing-dashboard
+      // 3. Store Manager / Admin -> /store-dashboard
       if (rolesList.contains('delivery_partner') && !rolesList.contains('store_manager') && !rolesList.contains('admin')) {
         context.go('/delivery-dashboard');
       } else if ((rolesList.contains('marketing_executive') || rolesList.contains('marketing')) && !rolesList.contains('store_manager') && !rolesList.contains('admin')) {
@@ -112,195 +114,156 @@ class _PartnerLoginScreenState extends ConsumerState<PartnerLoginScreen> {
             .trim();
         setState(() {
           _isLoading = false;
-          _errorMessage = cleanMsg.isNotEmpty ? cleanMsg : 'Login failed. Please try again.';
+          _errorMessage = cleanMsg.isNotEmpty ? cleanMsg : 'Login failed. Please check credentials.';
         });
         AppHaptics.error();
       }
     }
   }
 
-  Color get _rolePrimaryColor {
-    switch (_selectedRole) {
-      case 'delivery_partner':
-        return const Color(0xFF0284C7); // Clean Delivery Blue
-      case 'marketing_executive':
-        return const Color(0xFFD97706); // Clean Amber
-      default:
-        return const Color(0xFF059669); // Clean Emerald
-    }
-  }
-
-  Color get _roleGradientEnd {
-    switch (_selectedRole) {
-      case 'delivery_partner':
-        return const Color(0xFF0369A1);
-      case 'marketing_executive':
-        return const Color(0xFFB45309);
-      default:
-        return const Color(0xFF047857);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _rolePrimaryColor,
+      backgroundColor: _navyBgStart,
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [_rolePrimaryColor, _roleGradientEnd],
+            colors: [_navyBgStart, _navyBgMid, _navyBgEnd],
           ),
         ),
         child: SafeArea(
           bottom: false,
           child: Column(
             children: [
-              // 1. BRAND HERO HEADER (FLOATING LOGO + CLEAN TYPOGRAPHY)
+              // 1. BRAND HERO HEADER (DARK NAVY WITH GLOWING LOGO + REFINED TYPOGRAPHY)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
                 child: Column(
                   children: [
-                    // Floating Logo Card
+                    // Floating Logo with Ambient Emerald Glow
                     Hero(
                       tag: 'store_logo',
                       child: Container(
-                        width: 90,
-                        height: 90,
-                        padding: const EdgeInsets.all(7),
+                        width: 92,
+                        height: 92,
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(22),
+                          shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.16),
-                              blurRadius: 18,
-                              offset: const Offset(0, 6),
+                              color: _brandEmerald.withValues(alpha: 0.32),
+                              blurRadius: 32,
+                              spreadRadius: 4,
                             ),
                           ],
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Image.asset(
-                            'assets/icons/store_logo.png',
-                            fit: BoxFit.contain,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.35),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.asset(
+                              'assets/icons/store_logo.png',
+                              fit: BoxFit.contain,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
 
-                    // Brand Title
+                    // Brand Title with Refined Plus Jakarta Sans
                     Text(
                       'MeenMart Partner',
-                      style: GoogleFonts.outfit(
-                        fontSize: 24,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 25,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
-                        letterSpacing: 0.3,
+                        letterSpacing: -0.4,
                       ),
                     ),
-                    const SizedBox(height: 5),
 
-                    // Frosted Capsule
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
-                      ),
-                      child: Text(
-                        'OPERATIONS & DELIVERY PORTAL',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
 
-              // 2. WHITE CURVED FORM SECTION
+              // 2. WHITE CURVED SINGLE LOGIN FORM SECTION
               Expanded(
                 child: Container(
                   width: double.infinity,
                   decoration: const BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 12,
-                        offset: Offset(0, -3),
+                        color: Colors.black26,
+                        blurRadius: 18,
+                        offset: Offset(0, -4),
                       ),
                     ],
                   ),
                   child: SingleChildScrollView(
                     physics: const ClampingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 22, 20, 24),
+                    padding: const EdgeInsets.fromLTRB(22, 28, 22, 26),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ROLE SELECTOR TABS WITH ROBUST ADAPTIVE LAYOUT
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: Row(
-                            children: [
-                              _buildRoleTab(
-                                roleKey: 'store_manager',
-                                icon: Icons.storefront_rounded,
-                                label: 'Store Manager',
-                                userId: 'manager@meenmart.com',
-                              ),
-                              _buildRoleTab(
-                                roleKey: 'delivery_partner',
-                                icon: Icons.moped_rounded,
-                                label: 'Delivery',
-                                userId: 'delivery@meenmart.com',
-                              ),
-                              _buildRoleTab(
-                                roleKey: 'marketing_executive',
-                                icon: Icons.campaign_rounded,
-                                label: 'Marketing',
-                                userId: 'marketing@meenmart.com',
-                              ),
-                            ],
+                        // Portal Login Header with Refined Modern Typography
+                        Text(
+                          'Staff Login',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0F172A),
+                            letterSpacing: -0.5,
                           ),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Enter your credentials to access your dashboard',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13.5,
+                            color: const Color(0xFF64748B),
+                            fontWeight: FontWeight.w500,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
 
                         // Error Banner if Login Fails
                         if (_errorMessage != null) ...[
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            margin: const EdgeInsets.only(bottom: 18),
                             decoration: BoxDecoration(
                               color: const Color(0xFFFEF2F2),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFFECACA)),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFECACA), width: 1.2),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.error_outline_rounded, size: 18, color: Color(0xFFDC2626)),
-                                const SizedBox(width: 8),
+                                const Icon(Icons.error_outline_rounded, size: 20, color: Color(0xFFDC2626)),
+                                const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
                                     _errorMessage!,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 12.5,
                                       color: const Color(0xFFDC2626),
                                       fontWeight: FontWeight.w600,
+                                      height: 1.3,
                                     ),
                                   ),
                                 ),
@@ -309,77 +272,91 @@ class _PartnerLoginScreenState extends ConsumerState<PartnerLoginScreen> {
                           ),
                         ],
 
-                        // USER ID INPUT BOX
+                        // USER ID / EMAIL LABEL
                         Text(
-                          'User ID',
-                          style: GoogleFonts.inter(
-                            fontSize: 12.5,
+                          'USER ID / EMAIL',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11.5,
                             fontWeight: FontWeight.w800,
-                            color: const Color(0xFF0F172A),
+                            color: const Color(0xFF334155),
+                            letterSpacing: 0.6,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 7),
                         TextFormField(
                           controller: _userIdCtrl,
                           keyboardType: TextInputType.emailAddress,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
                             color: const Color(0xFF0F172A),
                           ),
                           decoration: InputDecoration(
                             isDense: true,
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                            prefixIcon: Icon(Icons.person_outline_rounded, size: 20, color: _rolePrimaryColor),
-                            hintText: 'Enter User ID (e.g. manager)',
-                            hintStyle: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                            prefixIcon: const Icon(
+                              Icons.person_outline_rounded,
+                              size: 21,
+                              color: _brandEmerald,
+                            ),
+                            hintText: 'e.g. manager@meenmart.com',
+                            hintStyle: GoogleFonts.plusJakartaSans(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF94A3B8),
+                            ),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
                             ),
                             focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: _rolePrimaryColor, width: 1.8),
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(color: _brandEmerald, width: 2.0),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 18),
 
-                        // PASSWORD INPUT BOX
+                        // PASSWORD LABEL
                         Text(
-                          'Password',
-                          style: GoogleFonts.inter(
-                            fontSize: 12.5,
+                          'PASSWORD',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11.5,
                             fontWeight: FontWeight.w800,
-                            color: const Color(0xFF0F172A),
+                            color: const Color(0xFF334155),
+                            letterSpacing: 0.6,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 7),
                         TextFormField(
                           controller: _passwordCtrl,
                           obscureText: _obscurePassword,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w600,
                             color: const Color(0xFF0F172A),
                           ),
                           decoration: InputDecoration(
                             isDense: true,
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                            prefixIcon: Icon(Icons.lock_outline_rounded, size: 20, color: _rolePrimaryColor),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                            prefixIcon: const Icon(
+                              Icons.lock_outline_rounded,
+                              size: 21,
+                              color: _brandEmerald,
+                            ),
                             suffixIcon: IconButton(
                               icon: Icon(
                                 _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                                size: 19,
-                                color: const Color(0xFF94A3B8),
+                                size: 20,
+                                color: const Color(0xFF64748B),
                               ),
                               onPressed: () {
                                 AppHaptics.selectionClick();
@@ -387,145 +364,78 @@ class _PartnerLoginScreenState extends ConsumerState<PartnerLoginScreen> {
                               },
                             ),
                             hintText: 'Enter your password',
-                            hintStyle: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8)),
+                            hintStyle: GoogleFonts.plusJakartaSans(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF94A3B8),
+                            ),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
                             ),
                             focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: _rolePrimaryColor, width: 1.8),
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(color: _brandEmerald, width: 2.0),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 26),
 
-                        // HIGH-TOUCH LOGIN BUTTON
-                        SizedBox(
+                        // DEEPLY OPTIMIZED PROMINENT LOGIN BUTTON (LARGER TEXT, NO ARROW, VIBRANT GRADIENT & GLOW)
+                        Container(
                           width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _rolePrimaryColor,
-                              foregroundColor: Colors.white,
-                              elevation: 2,
-                              shadowColor: _rolePrimaryColor.withValues(alpha: 0.35),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                          height: 54,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [_brandEmerald, _brandEmeraldLight],
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
                             ),
-                            onPressed: _isLoading ? null : _handleLogin,
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                                  )
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _brandEmerald.withValues(alpha: 0.38),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: _isLoading ? null : _handleLogin,
+                              borderRadius: BorderRadius.circular(14),
+                              splashColor: Colors.white.withValues(alpha: 0.25),
+                              highlightColor: Colors.white.withValues(alpha: 0.15),
+                              child: Center(
+                                child: _isLoading
+                                    ? const SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2.8,
+                                        ),
+                                      )
+                                    : Text(
                                         'LOGIN TO PORTAL',
-                                        style: GoogleFonts.outfit(
-                                          fontSize: 14,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 16.5,
                                           fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.6,
+                                          letterSpacing: 0.8,
+                                          color: Colors.white,
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      const Icon(Icons.arrow_forward_rounded, size: 18),
-                                    ],
-                                  ),
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 24),
 
-                        // ENCRYPTED ACCESS FOOTER
-                        Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.shield_outlined, size: 13, color: Color(0xFF64748B)),
-                                const SizedBox(width: 5),
-                                Text(
-                                  'Authorized Staff Only • MeenMart v2.4',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10.5,
-                                    color: const Color(0xFF64748B),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
                       ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRoleTab({
-    required String roleKey,
-    required IconData icon,
-    required String label,
-    required String userId,
-  }) {
-    final isSelected = _selectedRole == roleKey;
-    return Expanded(
-      child: InkWell(
-        onTap: () => _selectRolePreset(roleKey, userId),
-        borderRadius: BorderRadius.circular(9),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          decoration: BoxDecoration(
-            color: isSelected ? _rolePrimaryColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: _rolePrimaryColor.withValues(alpha: 0.25),
-                      blurRadius: 5,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 14,
-                color: isSelected ? Colors.white : const Color(0xFF64748B),
-              ),
-              const SizedBox(width: 4),
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                      color: isSelected ? Colors.white : const Color(0xFF64748B),
                     ),
                   ),
                 ),

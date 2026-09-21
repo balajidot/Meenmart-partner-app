@@ -159,7 +159,12 @@ extension OrderStatusPipelineExt on OrderStatusPipeline {
     if (clean == 'packed' || clean == 'packing' || clean == 'verified') return OrderStatusPipeline.packed;
     if (clean == 'handed_over' || clean == 'out_for_delivery' || clean == 'dispatched' || clean == 'on_the_way' || clean == 'assigned') return OrderStatusPipeline.handedOver;
     if (clean == 'completed' || clean == 'delivered' || clean == 'success' || clean == 'done') return OrderStatusPipeline.completed;
-    if (clean == 'cancelled' || clean == 'canceled' || clean == 'rejected' || clean == 'declined' || clean == 'void') return OrderStatusPipeline.cancelled;
+    // cancel_requested / refund states must never look like a fresh order,
+    // otherwise fish gets purchased for an order the customer asked to cancel.
+    if (clean == 'cancelled' || clean == 'canceled' || clean == 'rejected' || clean == 'declined' || clean == 'void' ||
+        clean == 'cancel_requested' || clean == 'refund_pending' || clean == 'refunded') {
+      return OrderStatusPipeline.cancelled;
+    }
 
     return OrderStatusPipeline.values.firstWhere(
       (e) => e.code == clean || e.labelEnglish.toLowerCase() == clean.replaceAll('_', ' '),

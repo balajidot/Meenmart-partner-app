@@ -118,7 +118,7 @@ class SupportChatService {
   }) async {
     final safeUserId = _validUuid(customerUserId);
     await Supabase.instance.client.from('chat_messages').insert({
-      if (safeUserId != null) 'user_id': safeUserId,
+      'user_id': ?safeUserId,
       'order_id': orderId,
       'message': message,
       'is_admin_reply': true, // Sent by Store / Operations
@@ -133,7 +133,7 @@ class SupportChatService {
   }) async {
     final safeUserId = _validUuid(userId);
     await Supabase.instance.client.from('chat_messages').insert({
-      if (safeUserId != null) 'user_id': safeUserId,
+      'user_id': ?safeUserId,
       'order_id': orderId,
       'message': message,
       'is_admin_reply': true,

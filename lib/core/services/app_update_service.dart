@@ -21,7 +21,6 @@ class AppUpdateService {
 
   RealtimeChannel? _realtimeChannel;
   bool _isChecking = false;
-  bool _dialogShownThisSession = false;
 
   /// Fetches the latest store app update settings from Supabase
   Future<AppUpdateInfo?> checkForUpdate() async {
@@ -61,21 +60,20 @@ class AppUpdateService {
     }
   }
 
-  /// Automatically checks for update and prompts user if a new version is available
+  /// Checks for update. ONLY prompts if isManual is true (user explicitly tapped "Check for Updates")
   Future<void> checkAndPrompt(BuildContext context, {bool isManual = false}) async {
+    // Only proceed if explicitly requested by the user via manual check
+    if (!isManual) return;
     if (!context.mounted) return;
 
     final info = await checkForUpdate();
     if (!context.mounted) return;
 
     if (info != null && info.isUpdateAvailable) {
-      if (isManual || !_dialogShownThisSession || info.isForceUpdate) {
-        _dialogShownThisSession = true;
-        AppHaptics.heavyImpact();
-        SoundService().playNewOrderChime();
-        await AppUpdateDialog.show(context, info);
-      }
-    } else if (isManual) {
+      AppHaptics.heavyImpact();
+      SoundService().playNewOrderChime();
+      await AppUpdateDialog.show(context, info);
+    } else {
       AppHaptics.selectionClick();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -99,34 +97,9 @@ class AppUpdateService {
     }
   }
 
-  /// Subscribes to Realtime changes on settings to broadcast updates instantly to active workers
+  /// Realtime listener (disabled from automatic popups per user requirement)
   void subscribeRealtime(BuildContext context) {
-    if (_realtimeChannel != null) {
-      _realtimeChannel?.unsubscribe();
-      _realtimeChannel = null;
-    }
-
-    try {
-      final db = Supabase.instance.client;
-      _realtimeChannel = db.channel('store-app-updates-realtime').onPostgresChanges(
-        event: PostgresChangeEvent.all,
-        schema: 'public',
-        table: 'settings',
-        callback: (payload) async {
-          final newRec = payload.newRecord;
-          final key = newRec['key']?.toString();
-          if (key != null && key.startsWith('store_')) {
-            _cachedUpdateInfo = null; // Invalidate cache
-            if (context.mounted) {
-              await checkAndPrompt(context, isManual: true);
-            }
-          }
-        },
-      );
-      _realtimeChannel?.subscribe();
-    } catch (e) {
-      debugPrint('Realtime update subscription notice: $e');
-    }
+    // No automatic background popup
   }
 
   void dispose() {

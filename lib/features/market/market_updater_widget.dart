@@ -110,46 +110,32 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
       }
     } catch (e) {
       debugPrint('Supabase fish_items fetch notice: $e');
-      if (mounted && _marketItems.isEmpty) {
-        _useFallbackItems();
+      // Never show placeholder items: they carry real row ids (1, 2), so an
+      // edit would overwrite live inventory with demo prices.
+      if (mounted) {
+        _showInventoryLoadError();
       }
     }
   }
 
-  void _useFallbackItems() {
-    setState(() {
-      _marketItems = [
-        {
-          'id': 1,
-          'category': 'Fish',
-          'name': 'Vanjiram (Seer Fish)',
-          'tamil_name': 'வஞ்சிரம்',
-          'buying_price': 900.0,
-          'price_per_kg': 1250.0,
-          'stock_kg': 15.5,
-          'available': true,
-          'has_cleaning': true,
-          'cleaning_charge': 30.0,
-          'image_url': 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?w=400',
-          'allowed_cutting_types': ['Whole', 'Slices', 'Curry Cut'],
-        },
-        {
-          'id': 2,
-          'category': 'Fish',
-          'name': 'Pomfret (Vavval)',
-          'tamil_name': 'வௌவ்வால்',
-          'buying_price': 800.0,
-          'price_per_kg': 1100.0,
-          'stock_kg': 4.4,
-          'available': true,
-          'has_cleaning': true,
-          'cleaning_charge': 25.0,
-          'image_url': 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=400',
-          'allowed_cutting_types': ['Whole', 'Cleaned'],
-        },
-      ];
-      _isLoading = false;
-    });
+  void _showInventoryLoadError() {
+    setState(() => _isLoading = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFFB91C1C),
+        duration: const Duration(seconds: 6),
+        content: const Text('மீன் பட்டியல் load ஆகவில்லை — network-ஐ check செய்து Retry அழுத்தவும்'),
+        action: SnackBarAction(
+          label: 'RETRY',
+          textColor: Colors.white,
+          onPressed: () {
+            if (!mounted) return;
+            setState(() => _isLoading = true);
+            _fetchLiveInventory();
+          },
+        ),
+      ),
+    );
   }
 
   void _subscribeRealtime() {
@@ -211,6 +197,24 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
 
   Future<void> _toggleMasterSwitch(bool turnOn) async {
     AppHaptics.mediumImpact();
+
+    // A single tap changes the whole live catalog, so confirm first.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(turnOn ? 'Turn ON all items?' : 'Turn OFF all items?'),
+        content: Text(turnOn
+            ? 'எல்லா மீன்களும் customer app-இல் தெரியும்.'
+            : 'எல்லா மீன்களும் customer app-இல் மறையும்.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('CONFIRM')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final previous = {for (var item in _marketItems) item['id']: item['available']};
     setState(() {
       for (var item in _marketItems) {
         item['available'] = turnOn;
@@ -218,9 +222,27 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
     });
 
     try {
-      await Supabase.instance.client.from('fish_items').update({'available': turnOn}).neq('id', 0);
+      // Deleted items must stay hidden.
+      await Supabase.instance.client
+          .from('fish_items')
+          .update({'available': turnOn})
+          .or('is_deleted.eq.false,is_deleted.is.null');
     } catch (e) {
       debugPrint('Master switch update error: $e');
+      if (mounted) {
+        setState(() {
+          for (var item in _marketItems) {
+            item['available'] = previous[item['id']];
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFFB91C1C),
+            content: Text('❌ Update failed — items were NOT changed. Please try again.'),
+          ),
+        );
+      }
+      return;
     }
 
     if (mounted) {
@@ -3358,25 +3380,6 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
                     ],
                   ),
                 ),
-                // Size Preference Pill
-                if (hasSizePref) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.straighten_rounded, size: 10, color: Color(0xFF2563EB)),
-                        const SizedBox(width: 3),
-                        Text('Size: S/M/L', style: GoogleFonts.inter(fontSize: 9.5, color: const Color(0xFF1D4ED8), fontWeight: FontWeight.w800)),
-                      ],
-                    ),
-                  ),
-                ],
                 // Cleaning Fee Pill
                 if (hasCleaning) ...[
                   Container(

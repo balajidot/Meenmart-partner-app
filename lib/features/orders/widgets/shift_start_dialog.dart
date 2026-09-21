@@ -140,7 +140,9 @@ class _ShiftStartDialogState extends State<ShiftStartDialog> {
           });
           return;
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Geolocator last known position error: $e');
+      }
 
       if (mounted) {
         setState(() {
@@ -233,7 +235,9 @@ class _ShiftStartDialogState extends State<ShiftStartDialog> {
         if (compressed.isNotEmpty) {
           uploadBytes = Uint8List.fromList(compressed);
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Check-in image compression warning: $e');
+      }
 
       await client.storage.from('staff-checkins').uploadBinary(
         fileName,
@@ -271,12 +275,16 @@ class _ShiftStartDialogState extends State<ShiftStartDialog> {
         await prefs.setString(ShiftPrefs.startedDateKey(authId), dateStr);
         await prefs.setString(ShiftPrefs.checkInTimeKey(authId), now.toIso8601String());
         await prefs.setString(ShiftPrefs.formattedTimeKey(authId), DateFormat('hh:mm a').format(now));
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Failed to save shift prefs locally: $e');
+      }
 
       // Background cleanup of expired operational media
       try {
         await client.rpc('clean_expired_3day_operational_photos');
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Expired operational photos cleanup RPC warning: $e');
+      }
 
       SoundService().playSuccessChime();
       AppHaptics.success();

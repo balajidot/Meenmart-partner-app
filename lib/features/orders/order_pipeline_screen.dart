@@ -10,7 +10,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/services/sound_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/services/haptic_service.dart';
-import '../../core/services/app_update_service.dart';
 import '../../core/services/order_repository.dart';
 import '../../core/providers/order_providers.dart';
 import '../../core/providers/auth_provider.dart';
@@ -27,6 +26,7 @@ import 'widgets/shift_start_dialog.dart';
 import 'widgets/order_card_widget.dart';
 import 'widgets/order_empty_view.dart';
 import '../support/store_support_chat_screen.dart';
+import '../../core/widgets/animated_notification_bell.dart';
 
 class OrderPipelineScreen extends ConsumerStatefulWidget {
   const OrderPipelineScreen({super.key});
@@ -59,8 +59,6 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        AppUpdateService().checkAndPrompt(context);
-        AppUpdateService().subscribeRealtime(context);
         _checkAndPromptMorningShiftStart(forcePrompt: false);
       }
     });
@@ -162,7 +160,6 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
     _searchDebounce?.cancel();
     _searchFocusNode.dispose();
     _searchController.dispose();
-    AppUpdateService().dispose(); // FIX: cleanup realtime channel to prevent WebSocket leak
     super.dispose();
   }
 
@@ -468,8 +465,23 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
     }
     if (totalWeight <= 0) totalWeight = 1.0;
 
-    final totalPrice = (order['total_price'] as num? ?? (totalWeight * 500.0)).toDouble();
-    final avgPricePerKg = totalWeight > 0 ? (totalPrice / totalWeight) : 500.0;
+    double computedItemsTotal = 0.0;
+    double sumUnitPrices = 0.0;
+    int itemsWithPriceCount = 0;
+    for (final it in orderItems) {
+      final q = (it['quantity_kg'] as num?)?.toDouble() ?? 1.0;
+      final fish = it['fish_items'] is Map ? it['fish_items'] : null;
+      final p = (it['price_per_kg'] as num? ?? fish?['price_per_kg'] as num? ?? 0.0).toDouble();
+      final c = (it['cleaning_fee'] as num?)?.toDouble() ?? 0.0;
+      computedItemsTotal += (q * p) + c;
+      if (p > 0) {
+        sumUnitPrices += p;
+        itemsWithPriceCount++;
+      }
+    }
+    final fallbackUnitRate = itemsWithPriceCount > 0 ? (sumUnitPrices / itemsWithPriceCount) : 350.0;
+    final totalPrice = (order['total_price'] as num?)?.toDouble() ?? (computedItemsTotal > 0 ? computedItemsTotal : (totalWeight * fallbackUnitRate));
+    final avgPricePerKg = totalWeight > 0 ? (totalPrice / totalWeight) : fallbackUnitRate;
     final deliveryCharge = (order['delivery_charge'] as num? ?? 0.0).toDouble();
     final discountAmount = (order['discount_amount'] as num? ?? 0.0).toDouble();
 
@@ -485,7 +497,7 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
         discountAmount: discountAmount,
         themeColor: OrderCardWidget.getStageLiveColor(nextStage),
         onConfirmed: (confirmedWeight, finalPrice, weightProofUrl, verifiedItems) async {
-          await notifier.updateWeight(
+          final success = await notifier.updateWeight(
             orderId: order['id'],
             confirmedWeight: confirmedWeight,
             finalPrice: finalPrice,
@@ -493,6 +505,20 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
             weightProofUrl: weightProofUrl,
             itemUpdates: verifiedItems,
           );
+          if (!success) {
+            AppHaptics.error();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('❌ ${order['order_ref']} எடை பதிவிட முடியவில்லை. மீண்டும் முயற்சி செய்யவும்.'),
+                  backgroundColor: const Color(0xFFDC2626),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+            return;
+          }
+
           notifier.setSelectedStage(nextStage);
           AppHaptics.success();
           if (!isSoundMuted) {
@@ -585,21 +611,33 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
         order: order,
         defaultWage: defaultWage,
         onProceed: () async {
-          await notifier.updateStatus(order['id'], nextStage.code);
+          final success = await notifier.updateStatus(order['id'], nextStage.code);
+          if (!success) {
+            AppHaptics.error();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('❌ ${order['order_ref']} நிலையை மாற்ற முடியவில்லை.'),
+                  backgroundColor: const Color(0xFFDC2626),
+                ),
+              );
+            }
+            return;
+          }
           notifier.setSelectedStage(nextStage);
           AppHaptics.success();
           if (!isSoundMuted) {
             _soundService.playSuccessChime();
           }
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('✂️ ${order['order_ref']} Moved to Cleaning & Cutting'),
-                  backgroundColor: OrderCardWidget.getStageLiveColor(nextStage),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            }
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✂️ ${order['order_ref']} Moved to Cleaning & Cutting'),
+                backgroundColor: OrderCardWidget.getStageLiveColor(nextStage),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
         },
       );
       return;
@@ -612,7 +650,19 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
           order: order,
           themeColor: OrderCardWidget.getStageLiveColor(nextStage),
           onConfirmed: () async {
-            await notifier.updateStatus(order['id'], nextStage.code);
+            final success = await notifier.updateStatus(order['id'], nextStage.code);
+            if (!success) {
+              AppHaptics.error();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('❌ ${order['order_ref']} பேக்கிங் நிலைக்கு மாற்ற முடியவில்லை.'),
+                    backgroundColor: const Color(0xFFDC2626),
+                  ),
+                );
+              }
+              return;
+            }
             notifier.setSelectedStage(nextStage);
             AppHaptics.success();
             if (!isSoundMuted) {
@@ -733,10 +783,23 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
                           ),
                           onPressed: () async {
                             Navigator.pop(ctx);
-                            AppHaptics.success();
-                            _soundService.playSuccessChime();
                             final dispatched = await notifier.assignPartner(order['id'], partner['id']);
-                            if (!dispatched) return;
+                            if (!dispatched) {
+                              AppHaptics.error();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('❌ Failed to assign $pName. Please try again.'),
+                                    backgroundColor: const Color(0xFFDC2626),
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                            AppHaptics.success();
+                            if (!isSoundMuted) {
+                              _soundService.playSuccessChime();
+                            }
                             notifier.setSelectedStage(nextStage);
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -765,9 +828,20 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
                     ),
                     onPressed: () async {
                       Navigator.pop(ctx);
-                      AppHaptics.mediumImpact();
-                      _soundService.playStepTransition();
-                      await notifier.updateStatus(order['id'], nextStage.code);
+                      final success = await notifier.updateStatus(order['id'], nextStage.code);
+                      if (!success) {
+                        AppHaptics.error();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('❌ Failed to update status. Please try again.'),
+                              backgroundColor: Color(0xFFDC2626),
+                            ),
+                          );
+                        }
+                        return;
+                      }
+                      AppHaptics.success();
                       notifier.setSelectedStage(nextStage);
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -791,6 +865,20 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
         ),
       );
     } else {
+      final success = await notifier.updateStatus(order['id'], nextStage.code);
+      if (!success) {
+        AppHaptics.error();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ ${order['order_ref']} நிலையை மாற்ற முடியவில்லை.'),
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+          );
+        }
+        return;
+      }
+
       AppHaptics.heavyImpact();
       if (!isSoundMuted) {
         if (nextStage == OrderStatusPipeline.completed) {
@@ -803,7 +891,6 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
         _showOrderCompletedCelebrationDialog(order);
       }
 
-      await notifier.updateStatus(order['id'], nextStage.code);
       notifier.setSelectedStage(nextStage);
 
       if (mounted) {
@@ -1115,35 +1202,48 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
                               final status = notif['status'] as String? ?? 'new_order';
                               final stage = OrderStatusPipelineExt.fromCode(status);
 
-                              return Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
+                              return Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () {
+                                    AppHaptics.selectionClick();
+                                    Navigator.pop(context);
+                                    _switchToStage(stage);
+                                  },
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(7),
-                                      decoration: BoxDecoration(
-                                        color: stage.color.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Icon(stage.icon, color: stage.color, size: 18),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(title, style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w800)),
-                                          const SizedBox(height: 2),
-                                          Text(body, style: AppTextStyles.caption),
-                                        ],
-                                      ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(7),
+                                          decoration: BoxDecoration(
+                                            color: stage.color.withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Icon(stage.icon, color: stage.color, size: 18),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(title, style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w800)),
+                                              const SizedBox(height: 2),
+                                              Text(body, style: AppTextStyles.caption),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Color(0xFF94A3B8)),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
                               );
                             },
@@ -1330,52 +1430,12 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: () {
-                                      AppHaptics.selectionClick();
-                                      _showRecentNotificationsSheet();
-                                    },
-                                    borderRadius: BorderRadius.circular(14),
-                                    child: Container(
-                                      width: 44,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withValues(alpha: 0.22),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1.2),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.08),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        clipBehavior: Clip.none,
-                                        children: [
-                                          const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 22),
-                                          if (orderState.unreadNotificationCount > 0)
-                                            Positioned(
-                                              top: 10,
-                                              right: 10,
-                                              child: Container(
-                                                width: 8,
-                                                height: 8,
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFFEF4444),
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(color: Colors.white, width: 1.5),
-                                                ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
+                                AnimatedNotificationBell(
+                                  unreadCount: orderState.unreadNotificationCount,
+                                  onTap: () {
+                                    AppHaptics.selectionClick();
+                                    _showRecentNotificationsSheet();
+                                  },
                                 ),
                               ],
                             ),
@@ -1561,7 +1621,6 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
                                   14,
                                   10 + MediaQuery.paddingOf(context).bottom + 16,
                                 ),
-                                cacheExtent: 250,
                                 addRepaintBoundaries: true,
                                 addAutomaticKeepAlives: false,
                                 itemCount: filteredOrders.length,

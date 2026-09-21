@@ -239,11 +239,15 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       backgroundColor: Colors.white,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: Padding(
-        padding: const EdgeInsets.all(22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
             // Top App Logo with Rocket Badge
             Stack(
               alignment: Alignment.center,
@@ -460,12 +464,14 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
                       children: [
                         const Icon(Icons.stars_rounded, size: 16, color: Color(0xFF059669)),
                         const SizedBox(width: 6),
-                        Text(
-                          'என்னென்ன புதியவை (What\'s New):',
-                          style: GoogleFonts.inter(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF334155),
+                        Expanded(
+                          child: Text(
+                            'என்னென்ன புதியவை (What\'s New):',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF334155),
+                            ),
                           ),
                         ),
                       ],
@@ -580,21 +586,29 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
                       borderRadius: BorderRadius.circular(14),
                       onTap: () => _installApk(_downloadedFile!),
                       child: Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.install_mobile_rounded, color: Colors.white, size: 22),
-                            const SizedBox(width: 8),
-                            Text(
-                              'இப்போதே நிறுவுக (INSTALL UPDATE NOW)',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 0.3,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.install_mobile_rounded, color: Colors.white, size: 20),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  'இப்போதே நிறுவுக (Install Now)',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    letterSpacing: 0.2,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -647,21 +661,29 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
                       borderRadius: BorderRadius.circular(14),
                       onTap: _startNativeInAppDownload,
                       child: Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.download_rounded, color: Colors.white, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'இப்போதே புதுப்பிக்கவும் (UPDATE NOW)',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 0.3,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.download_rounded, color: Colors.white, size: 20),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  'இப்போதே புதுப்பிக்கவும் (Update Now)',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    letterSpacing: 0.2,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -711,6 +733,8 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
           ],
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 }

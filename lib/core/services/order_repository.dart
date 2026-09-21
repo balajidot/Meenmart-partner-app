@@ -23,9 +23,10 @@ class OrderRepository {
     }
     List<Map<String, dynamic>> results = [];
     try {
+      // Explicit columns: never pull credential columns into the app.
       final rows = await _db
           .from('delivery_partners')
-          .select('*')
+          .select('id, user_id, name, phone, vehicle_number, vehicle_type, duty_status, is_available')
           .order('id', ascending: true);
       if (rows.isNotEmpty) {
         results = List<Map<String, dynamic>>.from(rows);
@@ -43,27 +44,62 @@ class OrderRepository {
     return _cachedDeliveryPartners;
   }
 
-  /// Fetches orders with single optimized join and server-side limit
+  static const List<String> _terminalStatuses = [
+    'delivered',
+    'completed',
+    'cancelled',
+    'refunded',
+  ];
+
+  /// Every in-progress order (never truncated away by newer orders) plus the
+  /// most recent [limit] finished orders for the Completed / Cancelled tabs.
+  Future<List<Map<String, dynamic>>> _fetchActiveAndRecent(
+    String columns, {
+    required int limit,
+    required Duration timeout,
+  }) async {
+    final terminalList = '(${_terminalStatuses.join(',')})';
+    final results = await Future.wait([
+      _db
+          .from('orders')
+          .select(columns)
+          .not('status', 'in', terminalList)
+          .order('created_at', ascending: false)
+          .limit(1000)
+          .timeout(timeout),
+      _db
+          .from('orders')
+          .select(columns)
+          .inFilter('status', _terminalStatuses)
+          .order('created_at', ascending: false)
+          .limit(limit)
+          .timeout(timeout),
+    ]);
+    final merged = <Map<String, dynamic>>[
+      ...List<Map<String, dynamic>>.from(results[0]),
+      ...List<Map<String, dynamic>>.from(results[1]),
+    ];
+    merged.sort((a, b) => (b['created_at'] ?? '').toString().compareTo((a['created_at'] ?? '').toString()));
+    return merged;
+  }
+
+  /// Fetches orders with single optimized join
   Future<List<Map<String, dynamic>>> fetchLiveOrders({int limit = 80}) async {
     List<Map<String, dynamic>> items = [];
     try {
-      final rows = await _db
-          .from('orders')
-          .select('*, order_items(*, fish_items(*))')
-          .order('created_at', ascending: false)
-          .limit(limit)
-          .timeout(const Duration(seconds: 5));
-      items = List<Map<String, dynamic>>.from(rows);
+      items = await _fetchActiveAndRecent(
+        '*, order_items(*, fish_items(*))',
+        limit: limit,
+        timeout: const Duration(seconds: 5),
+      );
     } catch (err) {
       debugPrint('Direct join query notice, executing bounded fallback fetch: $err');
       try {
-        final orderRows = await _db
-            .from('orders')
-            .select('*')
-            .order('created_at', ascending: false)
-            .limit(limit)
-            .timeout(const Duration(seconds: 4));
-        items = List<Map<String, dynamic>>.from(orderRows);
+        items = await _fetchActiveAndRecent(
+          '*',
+          limit: limit,
+          timeout: const Duration(seconds: 4),
+        );
 
         if (items.isNotEmpty) {
           final orderIds = items.map((o) => o['id']).where((id) => id != null).toList();
@@ -248,11 +284,40 @@ class OrderRepository {
         }
       }
 
+      if (isWeightChanged && proposalItems.isEmpty) {
+        // Without item-level proposals the customer has nothing to approve,
+        // and the order would be stuck in pending_approval.
+        debugPrint('Weight changed but no item proposal could be built for order $orderId');
+        return false;
+      }
+
+      // 1. Weight changed → the server builds the proposal and computes the
+      //    proposed total / balance / refund from the ORIGINAL booked total.
+      //    It must run before the order row is touched, and any failure aborts.
+      if (isWeightChanged) {
+        await _db.rpc('propose_order_item_updates', params: {
+          'p_order_id': orderId,
+          'p_items': proposalItems.map((item) {
+            final rawId = item['order_item_id'];
+            final safeId = rawId is int ? rawId : (int.tryParse(rawId.toString()) ?? 0);
+            return {
+              'order_item_id': safeId,
+              'new_quantity_kg': item['proposed_quantity_kg'],
+              'new_with_cleaning': item['proposed_with_cleaning'],
+              'new_cutting_type': item['proposed_cutting_type'],
+            };
+          }).toList(),
+        });
+      }
+
+      // 2. total_price / proposed_total_price are NOT written from the app when
+      //    the weight changed: total_price stays as booked until the customer
+      //    approves (confirm_order_item_updates_atomic recalculates it).
       final updatePayload = <String, dynamic>{
         'confirmed_weight_kg': confirmedWeight,
-        'total_price': finalPrice,
+        if (!isWeightChanged) 'total_price': finalPrice,
+        if (!isWeightChanged) 'proposed_total_price': finalPrice,
         'is_weight_adjusted': isWeightChanged,
-        'proposed_total_price': finalPrice,
         'weight_update_status': isWeightChanged ? 'pending_approval' : 'approved',
         'status': 'weight_confirmed',
         'status_message': isWeightChanged
@@ -260,35 +325,13 @@ class OrderRepository {
             : 'Weight confirmed: ${confirmedWeight.toStringAsFixed(2)}kg.',
         'updated_at': now,
       };
-      if (isWeightChanged && proposalItems.isNotEmpty) {
-        updatePayload['pending_item_updates'] = proposalItems;
-      }
       if (weightProofUrl != null && weightProofUrl.isNotEmpty) {
         updatePayload['weight_proof_url'] = weightProofUrl;
       }
 
-      // Direct update to ensure columns are persisted immediately
       await _db.from('orders').update(updatePayload).eq('id', orderId);
 
-      if (isWeightChanged && proposalItems.isNotEmpty) {
-        try {
-          await _db.rpc('propose_order_item_updates', params: {
-            'p_order_id': orderId,
-            'p_items': proposalItems.map((item) {
-              final rawId = item['order_item_id'];
-              final safeId = rawId is int ? rawId : (int.tryParse(rawId.toString()) ?? 0);
-              return {
-                'order_item_id': safeId,
-                'new_quantity_kg': item['proposed_quantity_kg'],
-                'new_with_cleaning': item['proposed_with_cleaning'],
-                'new_cutting_type': item['proposed_cutting_type'],
-              };
-            }).toList(),
-          });
-        } catch (rpcErr) {
-          debugPrint('propose_order_item_updates rpc notice: $rpcErr');
-        }
-      } else if (proposalItems.isNotEmpty) {
+      if (!isWeightChanged && proposalItems.isNotEmpty) {
         for (final item in proposalItems) {
           final itemId = item['order_item_id'];
           final newQty = item['proposed_quantity_kg'];

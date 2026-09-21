@@ -7,6 +7,7 @@ import '../services/order_repository.dart';
 import '../services/sound_service.dart';
 import '../services/haptic_service.dart';
 import '../services/notification_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class OrdersState {
   final List<Map<String, dynamic>> orders;
@@ -159,12 +160,36 @@ class OrdersNotifier extends Notifier<OrdersState> {
       });
     }
 
+    int unreadCount = 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastReadStr = prefs.getString('orders_last_read_notifications_time');
+      if (lastReadStr != null) {
+        final lastRead = DateTime.tryParse(lastReadStr);
+        if (lastRead != null) {
+          unreadCount = initialNotifs.where((n) {
+            final tStr = n['time_str'] as String?;
+            if (tStr == null) return false;
+            final t = DateTime.tryParse(tStr);
+            return t != null && t.isAfter(lastRead);
+          }).length;
+        }
+      } else {
+        // Initial launch: count active unhandled new orders awaiting store action
+        unreadCount = orders.where((o) {
+          final st = (o['status'] ?? '').toString().toLowerCase();
+          return st == 'new_order' || st == 'pending' || st == 'placed' || st == 'confirmed';
+        }).length;
+      }
+    } catch (_) {}
+
     state = state.copyWith(
       orders: orders,
       deliveryPartners: partners,
       isLoading: false,
       recentNotifications: initialNotifs,
       latestNotification: initialNotifs.isNotEmpty ? initialNotifs.first : null,
+      unreadNotificationCount: unreadCount,
     );
   }
 
@@ -225,7 +250,8 @@ class OrdersNotifier extends Notifier<OrdersState> {
       final oldStatus = (payload.oldRecord['status'] ?? '').toString().toLowerCase();
       final isNewOrder = (isInsert || existingIdx == -1 || (oldStatus == 'pending_payment' && status != 'pending_payment')) &&
           (status == 'new_order' || status == 'pending' || status == 'placed' || status == 'confirmed');
-      final isCancelled = status == 'cancelled' && oldStatus != 'cancelled';
+      // Alert the store for both a final cancel and a customer cancel request.
+      final isCancelled = (status == 'cancelled' || status == 'cancel_requested') && oldStatus != status;
 
       // NOTIFICATIONS ONLY FOR: 1. NEW ORDERS & 2. CANCELLED ORDERS
       if (isNewOrder || isCancelled) {
@@ -323,6 +349,13 @@ class OrdersNotifier extends Notifier<OrdersState> {
 
   void clearUnreadNotifications() {
     state = state.copyWith(unreadNotificationCount: 0);
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('orders_last_read_notifications_time', DateTime.now().toIso8601String());
+    }).catchError((_) {});
+  }
+
+  void incrementUnreadNotifications() {
+    state = state.copyWith(unreadNotificationCount: state.unreadNotificationCount + 1);
   }
 
   Future<bool> updateStatus(
@@ -390,7 +423,11 @@ class OrdersNotifier extends Notifier<OrdersState> {
       if (idx != -1) {
         final orderMap = Map<String, dynamic>.from(currentList[idx]);
         orderMap['confirmed_weight_kg'] = confirmedWeight;
-        orderMap['total_price'] = finalPrice;
+        // A changed weight is only a proposal: total_price stays as booked until
+        // the customer approves it (the server recalculates on approval).
+        if (!isWeightChanged) {
+          orderMap['total_price'] = finalPrice;
+        }
         orderMap['is_weight_adjusted'] = isWeightChanged;
         orderMap['proposed_total_price'] = finalPrice;
         orderMap['weight_update_status'] = isWeightChanged ? 'pending_approval' : 'approved';
@@ -400,7 +437,8 @@ class OrdersNotifier extends Notifier<OrdersState> {
           orderMap['weight_proof_url'] = weightProofUrl;
         }
 
-        if (itemUpdates != null && itemUpdates.isNotEmpty) {
+        // Item quantities change locally only when no customer approval is needed.
+        if (!isWeightChanged && itemUpdates != null && itemUpdates.isNotEmpty) {
           final existingItems = (orderMap['order_items'] as List? ?? []).map((it) => Map<String, dynamic>.from(it)).toList();
           for (final u in itemUpdates) {
             final uId = u['order_item_id'] ?? u['id'];

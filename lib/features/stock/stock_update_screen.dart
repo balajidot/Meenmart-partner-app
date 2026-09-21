@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/services/haptic_service.dart';
 import '../../core/services/sound_service.dart';
 import '../../core/services/inventory_repository.dart';
+import '../../core/widgets/optimized_image.dart';
 import '../drawer/partner_drawer.dart';
 
 class StockUpdateScreen extends StatefulWidget {
@@ -157,10 +158,11 @@ class _StockUpdateScreenState extends State<StockUpdateScreen> {
                         final tamilName = item['tamil_name'] ?? item['name_ta'] ?? '';
                         final stockKg = (item['stock_kg'] as num? ?? 0.0).toDouble();
                         final price = (item['price_per_kg'] as num? ?? 0.0).toDouble();
+                        final imageUrl = item['image_url'] as String?;
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
@@ -177,62 +179,100 @@ class _StockUpdateScreenState extends State<StockUpdateScreen> {
                           ),
                           child: Row(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: isAvailable ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.set_meal_rounded,
-                                  color: isAvailable ? const Color(0xFF059669) : const Color(0xFFDC2626),
-                                  size: 22,
+                              // Real Fish Image Thumbnail with fallback
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: isAvailable ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isAvailable ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: (imageUrl != null && imageUrl.trim().isNotEmpty)
+                                      ? OptimizedImage(
+                                          imageUrl: imageUrl.trim(),
+                                          width: 48,
+                                          height: 48,
+                                          fit: BoxFit.cover,
+                                          borderRadius: BorderRadius.circular(12),
+                                          errorWidget: Center(
+                                            child: Icon(
+                                              Icons.set_meal_rounded,
+                                              color: isAvailable ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                                              size: 24,
+                                            ),
+                                          ),
+                                        )
+                                      : Center(
+                                          child: Icon(
+                                            Icons.set_meal_rounded,
+                                            color: isAvailable ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                                            size: 24,
+                                          ),
+                                        ),
                                 ),
                               ),
-                              const SizedBox(width: 14),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      '$name ${tamilName.isNotEmpty ? "($tamilName)" : ""}',
+                                      tamilName.isNotEmpty ? '$name ($tamilName)' : name.toString(),
                                       style: GoogleFonts.inter(
-                                        fontSize: 14,
+                                        fontSize: 13.5,
                                         fontWeight: FontWeight.w800,
                                         color: isAvailable ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
                                       ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    const SizedBox(height: 2),
-                                    Row(
+                                    const SizedBox(height: 3),
+                                    Wrap(
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 6,
+                                      runSpacing: 2,
                                       children: [
                                         Text(
-                                          isAvailable ? 'In Stock: ${stockKg.toStringAsFixed(0)} kg' : 'OUT OF STOCK (இருப்பில்லை)',
+                                          isAvailable
+                                              ? 'In Stock: ${stockKg.toStringAsFixed(0)} kg'
+                                              : 'OUT OF STOCK (இருப்பில்லை)',
                                           style: GoogleFonts.inter(
-                                            fontSize: 11.5,
+                                            fontSize: 11,
                                             fontWeight: FontWeight.w700,
                                             color: isAvailable ? const Color(0xFF059669) : const Color(0xFFDC2626),
                                           ),
                                         ),
-                                        if (price > 0) ...[
-                                          const SizedBox(width: 8),
+                                        if (price > 0)
                                           Text(
-                                            '•  ₹${price.toStringAsFixed(0)}/kg',
+                                            '• ₹${price.toStringAsFixed(0)}/kg',
                                             style: GoogleFonts.inter(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w600,
                                               color: const Color(0xFF64748B),
                                             ),
                                           ),
-                                        ],
                                       ],
                                     ),
                                   ],
                                 ),
                               ),
-                              Switch.adaptive(
-                                value: isAvailable,
-                                activeThumbColor: const Color(0xFF059669),
-                                onChanged: (val) => _toggleAvailability(index, val),
+                              const SizedBox(width: 8),
+                              Transform.scale(
+                                scale: 0.85,
+                                child: Switch.adaptive(
+                                  value: isAvailable,
+                                  activeTrackColor: const Color(0xFF059669),
+                                  activeThumbColor: Colors.white,
+                                  inactiveTrackColor: const Color(0xFFCBD5E1),
+                                  inactiveThumbColor: Colors.white,
+                                  onChanged: (val) => _toggleAvailability(index, val),
+                                ),
                               ),
                             ],
                           ),

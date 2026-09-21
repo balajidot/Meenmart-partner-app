@@ -195,6 +195,7 @@ class _PackingVerificationDialogState extends State<PackingVerificationDialog> {
                             final fish = it['fish_items'] is Map ? it['fish_items'] : null;
                             final name = fish != null ? (fish['name'] ?? fish['name_en'] ?? it['item_name'] ?? 'Seafood') : (it['item_name'] ?? 'Seafood');
                             final tamil = fish != null ? (fish['tamil_name'] ?? '') : '';
+                            final imageUrl = fish != null ? (fish['image_url'] as String?) : null;
                             final itemQty = (it['quantity_kg'] as num? ?? 1.0).toDouble();
                             final itemCutting = (it['cutting_type'] ?? 'Cleaned').toString();
                             final withClean = it['with_cleaning'] == true;
@@ -207,8 +208,36 @@ class _PackingVerificationDialogState extends State<PackingVerificationDialog> {
                                 : '${itemQty.toStringAsFixed(itemQty.truncateToDouble() == itemQty ? 0 : 1)} kg';
 
                             return Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: (imageUrl != null && imageUrl.trim().isNotEmpty)
+                                        ? OptimizedImage(
+                                            imageUrl: imageUrl.trim(),
+                                            width: 44,
+                                            height: 44,
+                                            memCacheWidth: 88,
+                                            memCacheHeight: 88,
+                                            borderRadius: BorderRadius.circular(10),
+                                            errorWidget: const Center(
+                                              child: Icon(Icons.set_meal_rounded, color: Color(0xFF0EA5E9), size: 22),
+                                            ),
+                                          )
+                                        : const Center(
+                                            child: Icon(Icons.set_meal_rounded, color: Color(0xFF0EA5E9), size: 22),
+                                          ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
