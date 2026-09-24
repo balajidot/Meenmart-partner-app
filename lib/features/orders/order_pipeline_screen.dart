@@ -426,21 +426,46 @@ class _OrderPipelineScreenState extends ConsumerState<OrderPipelineScreen> with 
                 final staffId = profile?['id']?.toString() ?? profile?['auth_id']?.toString();
                 final now = DateTime.now();
 
-                await db.from('expenses').insert({
-                  'category': 'Cutter Labor Wage',
-                  'expense_type': 'labour_wage',
-                  'amount': enteredAmt,
-                  'order_ref': order['order_ref'],
-                  'order_id': order['id'],
-                  'description': 'Cleaning & Cutting wage confirmed in order pipeline',
-                  'payment_mode': 'cash_drawer',
-                  'staff_name': staffName,
-                  'staff_id': staffId,
-                  'branch_location': profile?['branch_location'] ?? 'Pulicat Central Store',
-                  'date': now.toIso8601String().substring(0, 10),
-                });
+                // One wage row per order: this runs before the status change,
+                // so a failed move to Cleaning followed by a retry used to add
+                // the wage twice and double the labour cost in Cashflow.
+                final existing = await db
+                    .from('expenses')
+                    .select('id')
+                    .eq('order_id', order['id'])
+                    .eq('category', 'Cutter Labor Wage')
+                    .limit(1);
+                if (existing.isNotEmpty) {
+                  await db.from('expenses').update({
+                    'amount': enteredAmt,
+                    'staff_name': staffName,
+                    'staff_id': staffId,
+                  }).eq('id', existing.first['id']);
+                } else {
+                  await db.from('expenses').insert({
+                    'category': 'Cutter Labor Wage',
+                    'expense_type': 'labour_wage',
+                    'amount': enteredAmt,
+                    'order_ref': order['order_ref'],
+                    'order_id': order['id'],
+                    'description': 'Cleaning & Cutting wage confirmed in order pipeline',
+                    'payment_mode': 'cash_drawer',
+                    'staff_name': staffName,
+                    'staff_id': staffId,
+                    'branch_location': profile?['branch_location'] ?? 'Pulicat Central Store',
+                    'date': now.toIso8601String().substring(0, 10),
+                  });
+                }
               } catch (e) {
                 debugPrint('Save cleaning wage error: $e');
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Color(0xFFB91C1C),
+                      content: Text('⚠️ Cutter wage save ஆகவில்லை — Cashflow-இல் சேர்க்கவும்'),
+                    ),
+                  );
+                }
               }
 
               onProceed();

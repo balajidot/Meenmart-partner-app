@@ -40,6 +40,7 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
   List<Map<String, dynamic>> _marketItems = [];
   List<String> _categories = ['All', 'Fish', 'Prawns', 'Crab', 'Squid', 'Lobster', 'Dry Fish'];
   RealtimeChannel? _realtimeChannel;
+  Timer? _realtimeRefetch;
 
   static const List<Map<String, String>> _supabaseCuttingStyles = [
     {'id': 'curry_cut', 'label': 'Curry Cut'},
@@ -60,6 +61,7 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _realtimeRefetch?.cancel();
     _realtimeChannel?.unsubscribe();
     super.dispose();
   }
@@ -145,7 +147,14 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
         event: PostgresChangeEvent.all,
         schema: 'public',
         table: 'fish_items',
-        callback: (_) => _fetchLiveInventory(),
+        // Coalesce bursts (a batch of orders each writing stock_kg) into one
+        // reload of the whole catalog.
+        callback: (_) {
+          _realtimeRefetch?.cancel();
+          _realtimeRefetch = Timer(const Duration(milliseconds: 600), () {
+            if (mounted) _fetchLiveInventory();
+          });
+        },
       );
       _realtimeChannel?.subscribe();
     } catch (e) {
@@ -188,10 +197,23 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
         cleanChanges['price_per_kg'] = (cleanChanges['price_per_kg'] as num).toDouble();
       }
 
-      await db.from('fish_items').update(cleanChanges).eq('id', targetId);
+      // RLS updates 0 rows without an error, so confirm a row changed.
+      final rows = await db.from('fish_items').update(cleanChanges).eq('id', targetId).select('id');
+      if (rows.isEmpty) throw StateError('fish_items $targetId was not updated');
       debugPrint('✅ Supabase fish_items ($targetId) updated: $cleanChanges');
     } catch (e) {
       debugPrint('❌ Supabase fish_items update error: $e');
+      // The screen already shows the new value; without this the staff would
+      // believe a price / stock change is live while customers still see the
+      // old one. Say so and reload the real values.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFFB91C1C),
+          content: Text('❌ மாற்றம் save ஆகவில்லை — மீண்டும் முயற்சிக்கவும்'),
+        ),
+      );
+      _fetchLiveInventory();
     }
   }
 
@@ -338,9 +360,25 @@ class _MarketUpdaterWidgetState extends State<MarketUpdaterWidget> {
       if (itemId != null) {
         try {
           final db = Supabase.instance.client;
-          await db.from('fish_items').update({'is_deleted': true, 'available': false}).eq('id', itemId);
+          final rows = await db
+              .from('fish_items')
+              .update({'is_deleted': true, 'available': false})
+              .eq('id', itemId)
+              .select('id');
+          if (rows.isEmpty) throw StateError('fish_items $itemId was not deleted');
         } catch (e) {
           debugPrint('Delete fish notice: $e');
+          // Still live for customers: put it back and say so.
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                backgroundColor: Color(0xFFB91C1C),
+                content: Text('❌ Delete ஆகவில்லை — மீண்டும் முயற்சிக்கவும்'),
+              ),
+            );
+            _fetchLiveInventory();
+          }
+          return;
         }
       }
 

@@ -469,8 +469,17 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
           await _loadAttendanceData();
         }
       } catch (e) {
+        debugPrint('Punch out failed: $e');
+        AppHaptics.error();
         if (mounted) {
           setState(() => _isPunching = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: Colors.red.shade700,
+              behavior: SnackBarBehavior.floating,
+              content: const Text('❌ Punch out பதிவாகவில்லை. Internet-ஐ சரிபார்த்து மீண்டும் முயற்சிக்கவும்.'),
+            ),
+          );
         }
       }
     }

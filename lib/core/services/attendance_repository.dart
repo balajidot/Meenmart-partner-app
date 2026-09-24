@@ -409,26 +409,29 @@ class AttendanceRepository {
     final nowTimeFmt = DateFormat('hh:mm a').format(now);
     final durationStr = todayRecord.checkInDateTime != null ? '${now.difference(todayRecord.checkInDateTime!).inHours}h ${now.difference(todayRecord.checkInDateTime!).inMinutes.remainder(60)}m' : '8h 00m';
 
-    try {
-      final isUuid = RegExp(
-        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-      ).hasMatch(todayRecord.id);
+    final isUuid = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(todayRecord.id);
 
-      final updatePayload = {
-        'check_out_time': now.toIso8601String(),
-        'status': 'COMPLETED',
-      };
+    final updatePayload = {
+      'check_out_time': now.toIso8601String(),
+      'status': 'COMPLETED',
+    };
 
-      if (isUuid) {
-        await _client.from('staff_attendance').update(updatePayload).eq('id', todayRecord.id);
-      } else {
-        await _client
+    // Must reach the server: a punch-out that only lived in the local cache
+    // showed "Shift ended" while the DB kept the shift open (wrong hours).
+    // RLS updates 0 rows silently, so check that a row actually changed.
+    final rows = isUuid
+        ? await _client.from('staff_attendance').update(updatePayload).eq('id', todayRecord.id).select('id')
+        : await _client
             .from('staff_attendance')
             .update(updatePayload)
             .eq('auth_id', userId)
-            .eq('date', todayRecord.date);
-      }
+            .eq('date', todayRecord.date)
+            .select('id');
+    if (rows.isEmpty) throw StateError('Punch out was not saved. Please try again.');
 
+    try {
       await _client.from('manager_activity_logs').insert({
         'staff_name': staffName,
         'event_type': 'shift_end',
