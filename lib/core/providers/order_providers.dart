@@ -68,7 +68,10 @@ class OrdersNotifier extends Notifier<OrdersState> {
   @override
   OrdersState build() {
     ref.onDispose(() {
-      _realtimeChannel?.unsubscribe();
+      // removeChannel, not just unsubscribe: the rebuilt notifier opens a
+      // channel with the same name.
+      final channel = _realtimeChannel;
+      if (channel != null) Supabase.instance.client.removeChannel(channel);
     });
 
     // Schedule initial async fetch
@@ -141,6 +144,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
     state = state.copyWith(isLoading: true);
     final partners = await _repo.fetchDeliveryPartners();
     final orders = await _repo.fetchLiveOrders(limit: 80);
+    if (!ref.mounted) return; // reset (new sign-in) while this was loading
 
     // Initial notifications if empty
     final initialNotifs = <Map<String, dynamic>>[];
@@ -185,6 +189,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
         }).length;
       }
     } catch (_) {}
+    if (!ref.mounted) return;
 
     state = state.copyWith(
       orders: orders,
@@ -243,6 +248,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
     final seq = (_orderFetchSeq[orderId] ?? 0) + 1;
     _orderFetchSeq[orderId] = seq;
     final updatedSingle = await _repo.fetchSingleOrder(orderId);
+    if (!ref.mounted) return;
     if (_orderFetchSeq[orderId] != seq) return; // a newer event for this order won
     _orderFetchSeq.remove(orderId);
 
@@ -440,7 +446,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
       // Take the server's row rather than re-deriving totals here: whether a
       // change needs approval, and what the total is, are decided server-side.
       final fresh = await _repo.fetchSingleOrder(orderId);
-      if (fresh != null) {
+      if (fresh != null && ref.mounted) {
         final currentList = List<Map<String, dynamic>>.from(state.orders);
         final idx = currentList.indexWhere((o) => o['id'] == orderId);
         if (idx != -1) {
@@ -454,7 +460,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
 
   Future<bool> assignPartner(dynamic orderId, int partnerId) async {
     final success = await _repo.assignDeliveryPartner(orderId, partnerId);
-    if (success) {
+    if (success && ref.mounted) {
       final partner = state.deliveryPartners.firstWhere(
         (p) => p['id'] == partnerId,
         orElse: () => {},

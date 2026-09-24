@@ -38,6 +38,11 @@ class AuthNotifier extends Notifier<AuthState> {
     final sub = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
       final AuthChangeEvent event = data.event;
       if (event == AuthChangeEvent.signedIn) {
+        // Start this account's order list and realtime channel fresh: the
+        // provider is app-wide and still holds the previous sign-in's.
+        // (Reset here, not on sign-out, so it never rebuilds without a
+        // session and sits empty after the next sign-in.)
+        ref.invalidate(ordersNotifierProvider);
         await refreshProfile();
       } else if (event == AuthChangeEvent.signedOut) {
         // Stop live GPS so a signed-out phone never keeps broadcasting.
@@ -45,10 +50,6 @@ class AuthNotifier extends Notifier<AuthState> {
         clearSecureStaffImageCache();
         OrderRepository().clearCache();
         InventoryRepository().clearCache();
-        // Drop the previous account's order list and realtime channel; the
-        // provider is app-wide and would otherwise carry them into the next
-        // sign-in on this phone.
-        ref.invalidate(ordersNotifierProvider);
         state = AuthState(user: null, staffProfile: null, isLoading: false);
       }
     });
