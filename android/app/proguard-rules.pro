@@ -9,12 +9,10 @@
 -keep class io.flutter.plugins.**  { *; }
 -keep class io.flutter.embedding.** { *; }
 
-# ─── FIREBASE / FCM (CRITICAL - Release Build) ────────────────────────────────
-# Keep all Firebase classes to prevent R8 from stripping background handlers
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.** { *; }
--keep class com.google.firebase.messaging.** { *; }
--keep class com.google.firebase.iid.** { *; }
+# ─── FIREBASE / FCM ───────────────────────────────────────────────────────────
+# No blanket -keep for com.google.firebase / com.google.android.gms: those
+# AARs ship their own consumer rules, and keeping every class of both SDKs
+# stopped R8 from shrinking any of them. The FCM entry points stay pinned:
 -keepclasseswithmembers class * {
     @com.google.firebase.messaging.* <methods>;
 }
@@ -38,16 +36,11 @@
 -dontwarn com.google.android.play.core.splitinstall.**
 -dontwarn com.google.android.play.core.tasks.**
 
-# ─── SUPABASE & NETWORKING ────────────────────────────────────────────────────
+# ─── NETWORKING ───────────────────────────────────────────────────────────────
+# supabase_flutter is pure Dart (no com.supabase / ktor / okhttp classes in
+# this APK), so there is nothing to keep here.
 -keepattributes Signature, *Annotation*, EnclosingMethod, InnerClasses
--keep class com.supabase.** { *; }
--keep class io.github.jan.supabase.** { *; }
--keep class io.ktor.** { *; }
--dontwarn io.ktor.**
-# OkHttp (used by Supabase/Ktor internally)
 -dontwarn okhttp3.**
--keep class okhttp3.** { *; }
--keep interface okhttp3.** { *; }
 
 # ─── FLUTTER PLUGINS ──────────────────────────────────────────────────────────
 # Audioplayers
@@ -55,9 +48,6 @@
 
 # Local Notifications
 -keep class com.dexterous.flutterlocalnotifications.** { *; }
-
-# Secure Storage
--keep class com.it_nomads.fluttersecurestorage.** { *; }
 
 # Image Picker & Cropper
 -keep class io.flutter.plugins.imagepicker.** { *; }

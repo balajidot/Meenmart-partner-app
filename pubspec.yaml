@@ -2,7 +2,7 @@ name: meenmart_store
 description: "MeenMart Partner — Store, Delivery & Marketing Operations (Pazhaverkadu)"
 publish_to: 'none'
 
-version: 2.1.0+2
+version: 2.1.0+3
 
 environment:
   sdk: ^3.11.4
@@ -55,20 +55,24 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/icons/store_logo.png"
+  # Full-size sources live in assets_src/ (not bundled into the app); only
+  # the icon / splash generators read them. The app uses the 320px copy in
+  # assets/icons/.
+  image_path: "assets_src/icons/store_logo.png"
   adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/icons/store_logo.png"
+  adaptive_icon_foreground: "assets_src/icons/store_logo.png"
   min_sdk_android: 21
 
+# No *_dark keys: the dark splash was identical to the light one and only
+# added a second copy of every splash image. values-v31 points at
+# @drawable/splash instead of a duplicate android12splash.png; re-point it
+# after regenerating.
 flutter_native_splash:
   color: "#FFFFFF"
-  image: "assets/icons/splash_logo.png"
-  color_dark: "#FFFFFF"
-  image_dark: "assets/icons/splash_logo.png"
+  image: "assets_src/icons/splash_logo.png"
   android_gravity: center
   fullscreen: true
   android_12:
-    image: "assets/icons/splash_logo.png"
+    image: "assets_src/icons/splash_logo.png"
     icon_background_color: "#FFFFFF"
     color: "#FFFFFF"
-    color_dark: "#FFFFFF"
