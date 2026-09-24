@@ -180,7 +180,10 @@ class _WeightConfirmationDialogState extends State<WeightConfirmationDialog> {
     final diffKg = totalW - bookedW;
     final finalPrice = _calculatedFinalTotal;
     final diffPrice = finalPrice - _baseTotal;
-    final isChanged = diffKg.abs() > 0.02;
+    // Same rule as OrderRepository.updateOrderWeight: any single item off by
+    // more than 20g needs customer approval, even if the total still matches.
+    final isChanged = diffKg.abs() > 0.02 ||
+        _entries.any((e) => (e.currentWeight - e.bookedWeight).abs() > 0.02);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),

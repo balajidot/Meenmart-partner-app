@@ -223,7 +223,16 @@ class OrderRepository {
   }) async {
     try {
       final now = DateTime.now().toIso8601String();
-      final isWeightChanged = originalWeight != null && (confirmedWeight - originalWeight).abs() > 0.02;
+      // Per item, not just the total: moving 0.5kg from one fish to another
+      // keeps the total weight but changes the price, and still needs the
+      // customer's approval.
+      final anyItemChanged = (itemUpdates ?? const []).any((u) {
+        final oldQty = (u['old_quantity_kg'] as num? ?? u['quantity_kg'] as num?)?.toDouble();
+        final newQty = (u['confirmed_quantity_kg'] as num? ?? u['proposed_quantity_kg'] as num?)?.toDouble();
+        return oldQty != null && newQty != null && (newQty - oldQty).abs() > 0.02;
+      });
+      final isWeightChanged = anyItemChanged ||
+          (originalWeight != null && (confirmedWeight - originalWeight).abs() > 0.02);
 
       List<Map<String, dynamic>> proposalItems = [];
       if (itemUpdates != null && itemUpdates.isNotEmpty) {
@@ -259,7 +268,7 @@ class OrderRepository {
             for (final item in items) {
               final fish = item['fish_items'] as Map<String, dynamic>?;
               final fishName = fish?['name'] ?? 'Fish Item';
-              final oldQty = (item['quantity_kg'] as num? ?? originalWeight).toDouble();
+              final oldQty = (item['quantity_kg'] as num? ?? originalWeight ?? 0.0).toDouble();
               final pricePerKg = (item['price_per_kg'] as num? ?? (finalPrice / (confirmedWeight > 0 ? confirmedWeight : 1.0))).toDouble();
               final withCleaning = item['with_cleaning'] == true;
               final cleaningFee = (item['cleaning_fee'] as num? ?? 0.0).toDouble();
@@ -310,13 +319,14 @@ class OrderRepository {
         });
       }
 
-      // 2. total_price / proposed_total_price are NOT written from the app when
-      //    the weight changed: total_price stays as booked until the customer
-      //    approves (confirm_order_item_updates_atomic recalculates it).
+      // 2. total_price is never written from the app. Weight changed: it stays
+      //    as booked until the customer approves (confirm_order_item_updates_atomic
+      //    recalculates it). Weight unchanged: the booked total, computed by
+      //    place_order_atomic, is already the right price; re-deriving it here
+      //    from items + delivery - discount silently changed what the customer
+      //    owed whenever the two formulas disagreed.
       final updatePayload = <String, dynamic>{
         'confirmed_weight_kg': confirmedWeight,
-        if (!isWeightChanged) 'total_price': finalPrice,
-        if (!isWeightChanged) 'proposed_total_price': finalPrice,
         'is_weight_adjusted': isWeightChanged,
         'weight_update_status': isWeightChanged ? 'pending_approval' : 'approved',
         'status': 'weight_confirmed',
@@ -330,20 +340,6 @@ class OrderRepository {
       }
 
       await _db.from('orders').update(updatePayload).eq('id', orderId);
-
-      if (!isWeightChanged && proposalItems.isNotEmpty) {
-        for (final item in proposalItems) {
-          final itemId = item['order_item_id'];
-          final newQty = item['proposed_quantity_kg'];
-          if (itemId != null && newQty != null) {
-            try {
-              await _db.from('order_items').update({'quantity_kg': newQty}).eq('id', itemId);
-            } catch (itErr) {
-              debugPrint('Direct order item quantity sync notice: $itErr');
-            }
-          }
-        }
-      }
 
       return true;
     } catch (e) {
