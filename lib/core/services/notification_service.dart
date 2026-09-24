@@ -162,12 +162,11 @@ class NotificationService {
         _syncTokenToSupabase(newToken);
       });
 
-      // Subscribe to operational topics for broadcast alerts
-      try {
-        await messaging.subscribeToTopic('all_partners');
-        await messaging.subscribeToTopic('store_orders');
-      } catch (subErr) {
-        debugPrint('FCM topic subscription notice: $subErr');
+      // Only for a signed-in account: a phone that signed out (or never signed
+      // in) must not rejoin the order topics on every app start.
+      // syncCurrentToken() subscribes after sign-in.
+      if (Supabase.instance.client.auth.currentUser != null) {
+        await _subscribeTopics();
       }
 
       // Foreground message listener - Only alert on New Orders & Cancelled Orders
@@ -311,8 +310,44 @@ class NotificationService {
       if (token != null) {
         await _syncTokenToSupabase(token);
       }
+      // Sign-out deletes the token, which drops its topic subscriptions too;
+      // a sign-in later in the same app session needs them back.
+      await _subscribeTopics();
     } catch (e) {
       debugPrint('Error syncing current FCM token: $e');
+    }
+  }
+
+  // Operational topics for broadcast alerts.
+  Future<void> _subscribeTopics() async {
+    try {
+      final messaging = FirebaseMessaging.instance;
+      await messaging.subscribeToTopic('all_partners');
+      await messaging.subscribeToTopic('store_orders');
+    } catch (subErr) {
+      debugPrint('FCM topic subscription notice: $subErr');
+    }
+  }
+
+  /// Call before signing out, while the session can still write its own row.
+  /// Otherwise the signed-out phone keeps receiving new-order pushes (with
+  /// customer names and addresses) for the account that left.
+  Future<void> releaseTokenForSignOut() async {
+    try {
+      final client = Supabase.instance.client;
+      final user = client.auth.currentUser;
+      if (user != null) {
+        await client.from('store_staff').update({'fcm_token': null}).eq('auth_id', user.id);
+      }
+    } catch (e) {
+      debugPrint('Clear FCM token notice: $e');
+    }
+    // Also kill the token itself, so even a copy the DB update missed stops
+    // delivering. The next sign-in gets a fresh one via syncCurrentToken().
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (e) {
+      debugPrint('Delete FCM token notice: $e');
     }
   }
 

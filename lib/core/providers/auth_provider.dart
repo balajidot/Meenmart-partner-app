@@ -6,6 +6,7 @@ import '../services/inventory_repository.dart';
 import '../services/order_repository.dart';
 import '../services/notification_service.dart';
 import '../services/delivery_tracking_service.dart';
+import 'order_providers.dart';
 import '../widgets/secure_staff_image.dart';
 
 class AuthState {
@@ -44,6 +45,10 @@ class AuthNotifier extends Notifier<AuthState> {
         clearSecureStaffImageCache();
         OrderRepository().clearCache();
         InventoryRepository().clearCache();
+        // Drop the previous account's order list and realtime channel; the
+        // provider is app-wide and would otherwise carry them into the next
+        // sign-in on this phone.
+        ref.invalidate(ordersNotifierProvider);
         state = AuthState(user: null, staffProfile: null, isLoading: false);
       }
     });
@@ -90,6 +95,7 @@ class AuthNotifier extends Notifier<AuthState> {
     // Mark the rider offline while the session is still valid (RLS needs it).
     await _setDeliveryOffline();
     await DeliveryTrackingService.instance.stopTracking();
+    await NotificationService().releaseTokenForSignOut();
     await AuthService().signOut();
   }
 
