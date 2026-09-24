@@ -61,6 +61,9 @@ class OrdersNotifier extends Notifier<OrdersState> {
   final OrderRepository _repo = OrderRepository();
   final SoundService _soundService = SoundService();
   RealtimeChannel? _realtimeChannel;
+  bool _realtimeSubscribedOnce = false;
+  // Latest fetch per order id; an older fetch that finishes later is dropped.
+  final Map<dynamic, int> _orderFetchSeq = {};
 
   @override
   OrdersState build() {
@@ -208,6 +211,10 @@ class OrdersNotifier extends Notifier<OrdersState> {
         debugPrint('Orders Realtime subscription status: $status');
         if (status == RealtimeSubscribeStatus.subscribed) {
           debugPrint('✅ Realtime orders channel active!');
+          // A re-subscribe means the socket dropped and came back: any order
+          // placed in between never arrived as an event, so reload the list.
+          if (_realtimeSubscribedOnce) fetchAll();
+          _realtimeSubscribedOnce = true;
         }
       });
     } catch (e) {
@@ -233,11 +240,21 @@ class OrdersNotifier extends Notifier<OrdersState> {
     }
 
     // In-memory incremental delta update: fetch ONLY this single updated order with full items
+    final seq = (_orderFetchSeq[orderId] ?? 0) + 1;
+    _orderFetchSeq[orderId] = seq;
     final updatedSingle = await _repo.fetchSingleOrder(orderId);
+    if (_orderFetchSeq[orderId] != seq) return; // a newer event for this order won
+    _orderFetchSeq.remove(orderId);
 
     if (updatedSingle != null) {
       final currentList = List<Map<String, dynamic>>.from(state.orders);
       final existingIdx = currentList.indexWhere((o) => o['id'] == orderId);
+      // Previous status from our own copy: payload.oldRecord only carries the
+      // primary key unless the table has REPLICA IDENTITY FULL, which made
+      // every later update of a cancelled order alert as a new cancellation.
+      final previousStatus = existingIdx == -1
+          ? (payload.oldRecord['status'] ?? '').toString().toLowerCase()
+          : (currentList[existingIdx]['status'] ?? '').toString().toLowerCase();
 
       if (eventType == PostgresChangeEvent.insert || existingIdx == -1) {
         currentList.insert(0, updatedSingle);
@@ -247,7 +264,7 @@ class OrdersNotifier extends Notifier<OrdersState> {
 
       final isInsert = eventType == PostgresChangeEvent.insert;
       final status = (updatedSingle['status'] as String? ?? 'new_order').toLowerCase();
-      final oldStatus = (payload.oldRecord['status'] ?? '').toString().toLowerCase();
+      final oldStatus = previousStatus;
       final isNewOrder = (isInsert || existingIdx == -1 || (oldStatus == 'pending_payment' && status != 'pending_payment')) &&
           (status == 'new_order' || status == 'pending' || status == 'placed' || status == 'confirmed');
       // Alert the store for both a final cancel and a customer cancel request.
@@ -286,6 +303,20 @@ class OrdersNotifier extends Notifier<OrdersState> {
           'items': itemsSummary,
         };
 
+        final updatedNotifs = List<Map<String, dynamic>>.from(state.recentNotifications);
+        updatedNotifs.insert(0, notif);
+
+        // Commit before awaiting the notification: state read before an await
+        // and written after it would undo any other order update that landed
+        // in between.
+        state = state.copyWith(
+          orders: currentList,
+          recentNotifications: updatedNotifs,
+          latestNotification: notif,
+          unreadNotificationCount: state.unreadNotificationCount + 1,
+          selectedStage: isNewOrder ? OrderStatusPipeline.newOrder : state.selectedStage,
+        );
+
         try {
           if (isCancelled) {
             await NotificationService().showCancelledOrderNotification(
@@ -309,17 +340,6 @@ class OrdersNotifier extends Notifier<OrdersState> {
         } catch (nErr) {
           debugPrint('Local notification trigger error: $nErr');
         }
-
-        final updatedNotifs = List<Map<String, dynamic>>.from(state.recentNotifications);
-        updatedNotifs.insert(0, notif);
-
-        state = state.copyWith(
-          orders: currentList,
-          recentNotifications: updatedNotifs,
-          latestNotification: notif,
-          unreadNotificationCount: state.unreadNotificationCount + 1,
-          selectedStage: isNewOrder ? OrderStatusPipeline.newOrder : state.selectedStage,
-        );
       } else {
         // Silent update for all other workflow stages (e.g. weight, clean, pack, dispatch, deliver)
         state = state.copyWith(
@@ -417,44 +437,16 @@ class OrdersNotifier extends Notifier<OrdersState> {
       itemUpdates: itemUpdates,
     );
     if (success) {
-      final isWeightChanged = originalWeight != null && (confirmedWeight - originalWeight).abs() > 0.02;
-      final currentList = List<Map<String, dynamic>>.from(state.orders);
-      final idx = currentList.indexWhere((o) => o['id'] == orderId);
-      if (idx != -1) {
-        final orderMap = Map<String, dynamic>.from(currentList[idx]);
-        orderMap['confirmed_weight_kg'] = confirmedWeight;
-        // A changed weight is only a proposal: total_price stays as booked until
-        // the customer approves it (the server recalculates on approval).
-        if (!isWeightChanged) {
-          orderMap['total_price'] = finalPrice;
+      // Take the server's row rather than re-deriving totals here: whether a
+      // change needs approval, and what the total is, are decided server-side.
+      final fresh = await _repo.fetchSingleOrder(orderId);
+      if (fresh != null) {
+        final currentList = List<Map<String, dynamic>>.from(state.orders);
+        final idx = currentList.indexWhere((o) => o['id'] == orderId);
+        if (idx != -1) {
+          currentList[idx] = fresh;
+          state = state.copyWith(orders: currentList);
         }
-        orderMap['is_weight_adjusted'] = isWeightChanged;
-        orderMap['proposed_total_price'] = finalPrice;
-        orderMap['weight_update_status'] = isWeightChanged ? 'pending_approval' : 'approved';
-        orderMap['status'] = 'weight_confirmed';
-
-        if (weightProofUrl != null) {
-          orderMap['weight_proof_url'] = weightProofUrl;
-        }
-
-        // Item quantities change locally only when no customer approval is needed.
-        if (!isWeightChanged && itemUpdates != null && itemUpdates.isNotEmpty) {
-          final existingItems = (orderMap['order_items'] as List? ?? []).map((it) => Map<String, dynamic>.from(it)).toList();
-          for (final u in itemUpdates) {
-            final uId = u['order_item_id'] ?? u['id'];
-            final itIdx = existingItems.indexWhere((it) => it['id'] == uId);
-            if (itIdx != -1) {
-              final newW = (u['confirmed_quantity_kg'] as num? ?? u['proposed_quantity_kg'] as num?)?.toDouble();
-              if (newW != null) {
-                existingItems[itIdx]['quantity_kg'] = newW;
-              }
-            }
-          }
-          orderMap['order_items'] = existingItems;
-        }
-
-        currentList[idx] = orderMap;
-        state = state.copyWith(orders: currentList);
       }
     }
     return success;

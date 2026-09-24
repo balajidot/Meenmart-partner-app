@@ -48,11 +48,33 @@ class DeliveryTrackingService {
   // A heartbeat must never make an old position look live to the customer.
   static const Duration _maxFixAgeForHeartbeat = Duration(minutes: 2);
 
+  // Bumped by stopTracking(). A start that is still waiting for its first GPS
+  // fix when the rider goes Offline must not go on to open the stream.
+  int _generation = 0;
+  Future<bool>? _startInFlight;
+
   bool get isTracking => _positionSubscription != null;
   Position? get currentPosition => _lastReportedPosition;
 
   /// Starts live location streaming and broadcasting to Supabase delivery_partners table.
-  Future<bool> startTracking({required int partnerId}) async {
+  Future<bool> startTracking({required int partnerId}) {
+    // The delivery screen calls this every time it is rebuilt (drawer
+    // navigation disposes and recreates it). Restarting a live stream meant
+    // a fresh 8s GPS fix, an extra DB write and a foreground-service restart
+    // each time, for no change.
+    if (isTracking && _activePartnerId == partnerId) return Future.value(true);
+    final inFlight = _startInFlight;
+    if (inFlight != null) return inFlight;
+    late final Future<bool> started;
+    started = _start(partnerId).whenComplete(() {
+      if (identical(_startInFlight, started)) _startInFlight = null;
+    });
+    return _startInFlight = started;
+  }
+
+  Future<bool> _start(int partnerId) async {
+    final generation = _generation;
+    bool stopped() => generation != _generation;
     _activePartnerId = partnerId;
 
     try {
@@ -97,20 +119,24 @@ class DeliveryTrackingService {
             timeLimit: Duration(seconds: 8),
           ),
         );
+        if (stopped()) return false;
         await _broadcastLocationToSupabase(initialPos, partnerId, isFreshFix: true);
       } catch (e) {
         debugPrint('Initial GPS fix error: $e');
         // A last-known position may be old; show it once but don't treat it
         // as a fresh fix for heartbeats.
         final lastKnown = await Geolocator.getLastKnownPosition();
-        if (lastKnown != null) {
+        if (lastKnown != null && !stopped()) {
           await _broadcastLocationToSupabase(lastKnown, partnerId, isFreshFix: false);
         }
       }
 
+      if (stopped()) return false;
+
       // 4. Cancel any prior subscriptions
       await _positionSubscription?.cancel();
       _heartbeatTimer?.cancel();
+      if (stopped()) return false;
 
       // 5. Start continuous position stream (updates every 5 meters of movement).
       // On Android this runs as a FOREGROUND SERVICE (ongoing notification), so
@@ -243,6 +269,8 @@ class DeliveryTrackingService {
 
   /// Stops tracking and releases GPS and timer resources.
   Future<void> stopTracking() async {
+    _generation++;
+    _startInFlight = null; // a later start must not reuse the cancelled one
     await _positionSubscription?.cancel();
     _positionSubscription = null;
     _heartbeatTimer?.cancel();

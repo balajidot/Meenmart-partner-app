@@ -38,6 +38,7 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen>
   // Duty timer: real time since the partner went ONLINE (persisted per user)
   DateTime? _dutyOnlineSince;
   Timer? _dutyTicker;
+  Timer? _realtimeRefetch;
 
   String? get _dutyPrefsKey {
     final uid = Supabase.instance.client.auth.currentUser?.id;
@@ -95,6 +96,7 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen>
     // goes Break/Offline or on sign-out (see AuthNotifier).
     _radarController.dispose();
     _dutyTicker?.cancel();
+    _realtimeRefetch?.cancel();
     _ordersSubscription?.unsubscribe();
     super.dispose();
   }
@@ -268,9 +270,15 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen>
           callback: (payload) {
             if (!mounted) return;
             final newRec = payload.newRecord;
-            final oldRec = payload.oldRecord;
             final newStatus = newRec['status']?.toString().toLowerCase();
-            final oldStatus = oldRec['status']?.toString().toLowerCase();
+            // Previous status from our own list: payload.oldRecord only has the
+            // primary key unless the table is REPLICA IDENTITY FULL, so every
+            // update of an out-for-delivery order (e.g. the live-location
+            // toggle) used to chime again.
+            final known = _liveOrders.where((o) => o['id'] == newRec['id']);
+            final oldStatus = known.isNotEmpty
+                ? known.first['status']?.toString().toLowerCase()
+                : payload.oldRecord['status']?.toString().toLowerCase();
 
             // Chime only when an order is newly dispatched to THIS partner.
             if (partnerId != null &&
@@ -280,7 +288,13 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen>
               HapticService.heavyImpact();
               _soundService.playNewOrderChime();
             }
-            _fetchLiveDeliveryOrders();
+            // Manager view listens to every order in the shop; coalesce bursts
+            // (one status change often writes the row several times) into a
+            // single refetch.
+            _realtimeRefetch?.cancel();
+            _realtimeRefetch = Timer(const Duration(milliseconds: 600), () {
+              if (mounted) _fetchLiveDeliveryOrders();
+            });
           },
         )
         .subscribe();
