@@ -79,8 +79,8 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
       _errorMessage = null;
     });
 
+    final client = http.Client();
     try {
-      final client = http.Client();
       final request = http.Request('GET', Uri.parse(urlStr));
       final response = await client.send(request);
 
@@ -118,7 +118,14 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
 
       await sink.flush();
       await sink.close();
-      client.close();
+
+      // A dropped connection can end the stream early; installing that
+      // partial file fails with an unhelpful "problem parsing the package".
+      final expected = response.contentLength;
+      if (expected != null && _receivedBytes != expected) {
+        await file.delete();
+        throw Exception('Download incomplete ($_receivedBytes of $expected bytes). Please try again.');
+      }
 
       if (mounted) {
         AppHaptics.heavyImpact();
@@ -140,6 +147,8 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with SingleTickerProv
           _errorMessage = 'Download error: $e';
         });
       }
+    } finally {
+      client.close();
     }
   }
 

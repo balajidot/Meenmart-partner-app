@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/app_update_info.dart';
@@ -12,9 +13,26 @@ class AppUpdateService {
   factory AppUpdateService() => _instance;
   AppUpdateService._internal();
 
-  // Current build specifications of MeenMart Partner App
-  static const int currentVersionCode = 2;
-  static const String currentVersionName = '2.1.0';
+  // The installed build, read from the APK itself. These used to be
+  // hard-coded and had to be bumped by hand with pubspec on every release;
+  // forgetting made the new build offer itself as an update forever.
+  static int currentVersionCode = 0;
+  static String currentVersionName = '';
+
+  static Future<void> _loadInstalledVersion() async {
+    if (currentVersionName.isNotEmpty) return;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final code = int.tryParse(info.buildNumber) ?? 0;
+      // `flutter build apk --split-per-abi` stores abi * 1000 + build number
+      // (arm64 build 2 -> 2002). The settings row holds the plain pubspec
+      // build number, so compare against that part only.
+      currentVersionCode = code >= 1000 ? code % 1000 : code;
+      currentVersionName = info.version;
+    } catch (e) {
+      debugPrint('Package info notice: $e');
+    }
+  }
 
   AppUpdateInfo? _cachedUpdateInfo;
   AppUpdateInfo? get cachedUpdateInfo => _cachedUpdateInfo;
@@ -28,6 +46,9 @@ class AppUpdateService {
     _isChecking = true;
 
     try {
+      await _loadInstalledVersion();
+      // Unknown installed version: never claim an update is available.
+      if (currentVersionName.isEmpty) return null;
       final db = Supabase.instance.client;
       final rows = await db
           .from('settings')
