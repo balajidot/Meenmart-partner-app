@@ -83,7 +83,10 @@ class InventoryRepository {
 
       if (updateData.isEmpty) return true; // Nothing to update
 
-      await _db.from('fish_items').update(updateData).eq('id', itemId);
+      // RLS updates 0 rows without an error; report that as a failure so the
+      // screen doesn't claim a stock / price change that never went live.
+      final rows = await _db.from('fish_items').update(updateData).eq('id', itemId).select('id');
+      if (rows.isEmpty) return false;
 
       // Mutate local cache — sync both 'available' and legacy 'is_available' keys
       final idx = _cachedInventory.indexWhere((it) => it['id'] == itemId);

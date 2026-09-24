@@ -526,7 +526,9 @@ class _CashflowScreenState extends ConsumerState<CashflowScreen> {
     if (confirmed == true) {
       try {
         final db = Supabase.instance.client;
-        await db.from('expenses').delete().eq('id', expense['id']);
+        // RLS deletes 0 rows without an error; don't report that as deleted.
+        final deleted = await db.from('expenses').delete().eq('id', expense['id']).select('id');
+        if (deleted.isEmpty) throw StateError('Expense ${expense['id']} was not deleted');
         _soundService.playSuccessChime();
         AppHaptics.success();
         await _fetchCashflowData();
@@ -543,6 +545,14 @@ class _CashflowScreenState extends ConsumerState<CashflowScreen> {
         }
       } catch (e) {
         debugPrint('Delete expense error: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Color(0xFFB91C1C),
+              content: Text('❌ Expense delete ஆகவில்லை — மீண்டும் முயற்சிக்கவும்'),
+            ),
+          );
+        }
       }
     }
   }
